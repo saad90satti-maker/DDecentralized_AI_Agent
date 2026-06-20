@@ -1,0 +1,68 @@
+# =============================================================================
+# Ghost Engine — Test Runner Dockerfile
+# Build:  docker build -f Dockerfile.test -t ghost-engine-test:latest .
+# Run:    docker compose -f docker-compose.test.yml up --abort-on-container-exit
+# =============================================================================
+
+FROM python:3.11-slim AS test-base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    TESTING=1 \
+    GHOST_MODE=test
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    git \
+    ca-certificates \
+    gnupg \
+    iputils-ping \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ---- Layer: dependencies ----
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright + Chromium for browser tests
+RUN pip install --no-cache-dir playwright \
+    && playwright install --with-deps chromium \
+    && rm -rf /root/.cache /tmp/*
+
+# Install test-specific dependencies
+RUN pip install --no-cache-dir \
+    pytest \
+    pytest-asyncio \
+    pytest-cov \
+    pytest-timeout \
+    pytest-xdist \
+    httpx \
+    fakeredis \
+    pytest-mock \
+    coverage
+
+# Install decentralized infra dependencies for integration tests
+RUN pip install --no-cache-dir \
+    ipfshttpclient \
+    web3 \
+    eth-account \
+    kademlia \
+    redis
+
+# ---- Layer: application source ----
+COPY . .
+
+# Create test data directories
+RUN mkdir -p agent_logs agent_data agent_data/swarm browser_profile session_data frames
+
+# Copy test runner entrypoint
+COPY docker-entrypoint.test.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.test.sh
+
+ENTRYPOINT ["docker-entrypoint.test.sh"]
+CMD ["pytest", "tests/", "-v", "--cov=.", "--cov-report=term-missing", "--cov-report=html:coverage_report", "--timeout=120", "-x"]

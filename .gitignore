@@ -1,0 +1,94 @@
+# Environment & Secrets
+.env
+.env.*
+# .env.example intentionally tracked as template
+config.json
+agent_config.json
+*.key
+*.pem
+cf_api_key.py
+check_key.py
+
+# Logs
+*.log
+*.log.*
+agent_logs/
+system_log.txt
+system_log.txt.*
+manager_error.log
+manager_output.log
+main_stdout.txt
+main_stderr.txt
+
+# Data & Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+*.sqlite3
+*.sqlite
+agent_data/
+session_data/
+scratch/
+agent_metrics.db
+
+# Credentials & Cookies
+*cookies*.json
+gmail_cookies.json
+youtube_cookies.json
+gmail_storage.json
+node_identity.json
+node_identity.py
+
+# Media & Large Files
+*.mp4
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.zip
+*.tar
+*.gz
+page_screenshot.png
+example.png
+ghost_engine_demo.png
+hermes_demo_video.mp4
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Virtual Environment
+venv/
+.venv/
+env/
+myenv/
+virtualenv/
+
+# Docker
+.dockerignore
+
+# Python
+*.egg-info/
+dist/
+build/
+*.so
+*.whl
+
+# Git
+*.bak
+agent_report.json
+dashboard_metrics.json
+
+# System
+main_pid.txt
+agent_actions.log
+learning_log.py
+
+# Test artifacts
+.cache/

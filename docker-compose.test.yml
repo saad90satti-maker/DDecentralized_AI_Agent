@@ -1,0 +1,203 @@
+# =============================================================================
+# Ghost Engine — Docker Compose: Test Environment
+# =============================================================================
+# Run tests:         docker compose -f docker-compose.test.yml up --build
+# With coverage:     docker compose -f docker-compose.test.yml run test
+# Clean up:         docker compose -f docker-compose.test.yml down -v
+# =============================================================================
+
+version: "3.9"
+
+x-logging: &test-logging
+  driver: "json-file"
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+networks:
+  ghost-test-net:
+    driver: bridge
+
+volumes:
+  test-ipfs-data:
+  test-redis-data:
+  test-coverage:
+
+# =============================================================================
+# Test Strategy:
+#   Services that are "depends_on" the test-runner are REQUIRED and must
+#   actually be available (IPFS, Redis). The test suite auto-detects
+#   their presence and mocks them if they are unreachable.
+#
+#   Profiles:
+#     default:  mock mode (no external deps needed)
+#     full:     real IPFS + Redis + Ollama for true integration testing
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # TEST RUNNER (primary entrypoint)
+  # ---------------------------------------------------------------------------
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: ghost-engine-test:latest
+    container_name: ghost-engine-test
+    restart: "no"
+    networks:
+      - ghost-test-net
+    ports:
+      - "8001:8000"    # FastAPI dashboard (test instance)
+    environment:
+      # Test mode
+      - TESTING=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+      # Service endpoints
+      - IPFS_MULTIADDR=/dns/ipfs-node-test/tcp/5001/http
+      - IPFS_GATEWAY=http://ipfs-node-test:8080
+      - REDIS_URL=redis://redis-test:6379/0
+      - HERMES_URL=http://ollama-test:11434
+      - HERMES_MODEL=llama3.2:1b
+
+      # Standard env (from .env if exists, safe defaults otherwise)
+      - LOG_LEVEL=CRITICAL
+      - BROWSER_HEADLESS=1
+      - PORT=8000
+      - GHOST_MODE=test
+
+      # Optional: pass real API keys for integration testing
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+
+    volumes:
+      - test-coverage:/app/coverage_report
+      - ./tests:/app/tests:ro
+      - ./agent_data:/app/agent_data
+      - ./agent_logs:/app/agent_logs
+    depends_on:
+      ipfs-node-test:
+        condition: service_healthy
+        required: false
+      redis-test:
+        condition: service_healthy
+        required: false
+    profiles:
+      - ""       # default profile
+      - full     # also included with --profile full
+    command: >
+      sh -c "
+        echo '=== Ghost Engine Test Runner ===' &&
+        echo '  IPFS: $${IPFS_MULTIADDR}' &&
+        echo '  Redis: $${REDIS_URL}' &&
+        echo '' &&
+        python -m pytest tests/ -v
+          --cov=.
+          --cov-report=term-missing
+          --cov-report=html:/app/coverage_report
+          --cov-report=xml:/app/coverage_report/coverage.xml
+          --timeout=120
+          -x
+          -p no:cacheprovider
+      "
+
+  # ---------------------------------------------------------------------------
+  # IPFS Node (test instance)
+  # ---------------------------------------------------------------------------
+  ipfs-node-test:
+    image: ipfs/kubo:latest
+    container_name: ghost-ipfs-test
+    restart: "no"
+    networks:
+      - ghost-test-net
+    ports:
+      - "5002:5001"    # HTTP API (mapped to avoid conflict with main stack)
+      - "8081:8080"    # Gateway
+    environment:
+      - IPFS_PROFILE=test
+      - IPFS_EXPERIMENTAL_FILESTORE_ENABLED=true
+    volumes:
+      - test-ipfs-data:/data/ipfs
+    logging: *test-logging
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 2s
+    profiles:
+      - full
+
+  # ---------------------------------------------------------------------------
+  # Redis (test instance)
+  # ---------------------------------------------------------------------------
+  redis-test:
+    image: redis:7-alpine
+    container_name: ghost-redis-test
+    restart: "no"
+    networks:
+      - ghost-test-net
+    ports:
+      - "6380:6379"    # Standard Redis port (mapped to avoid conflict)
+    volumes:
+      - test-redis-data:/data
+    logging: *test-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    profiles:
+      - full
+
+  # ---------------------------------------------------------------------------
+  # Ollama (test instance — optional, only with --profile llm)
+  # ---------------------------------------------------------------------------
+  ollama-test:
+    profiles:
+      - llm
+    image: ollama/ollama:latest
+    container_name: ghost-ollama-test
+    restart: "no"
+    networks:
+      - ghost-test-net
+    ports:
+      - "11435:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    logging: *test-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    entrypoint: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull llama3.2:1b &&
+             wait"
+
+  # ---------------------------------------------------------------------------
+  # Coverage report viewer (after tests complete)
+  # ---------------------------------------------------------------------------
+  coverage-viewer:
+    profiles:
+      - report
+    image: python:3.11-alpine
+    container_name: ghost-coverage-viewer
+    restart: "no"
+    networks:
+      - ghost-test-net
+    ports:
+      - "8082:8080"
+    volumes:
+      - test-coverage:/report
+    command: >
+      sh -c "
+        pip install -q http.server &&
+        cd /report &&
+        python -m http.server 8080
+      "

@@ -1,0 +1,233 @@
+# =============================================================================
+# Ghost Engine — Akash Network Deployment (SDL v2.2)
+# =============================================================================
+# Prerequisites:
+#   1. Install Akash CLI: curl -sSfL https://raw.githubusercontent.com/akash-network/install/main/install.sh | bash
+#   2. Create wallet:     provider-services keys add ghost-deployer
+#   3. Fund wallet:       curl -s https://faucet.akash.network/faucet?address=$(provider-services keys show ghost-deployer -a)
+# =============================================================================
+# Deploy:
+#   provider-services tx deployment create deploy.yaml --from ghost-deployer -y
+# Check bids:
+#   provider-services query market bid list --owner $(provider-services keys show ghost-deployer -a)
+# Accept & deploy:
+#   provider-services tx market lease create --dseq <dseq> --provider <provider> --from ghost-deployer -y
+#   provider-services send-manifest deploy.yaml --dseq <dseq> --provider <provider> --from ghost-deployer
+# Close:
+#   provider-services tx deployment close --dseq <dseq> --from ghost-deployer -y
+# =============================================================================
+
+---
+version: "2.0"
+
+# =============================================================================
+# METADATA
+# =============================================================================
+metadata:
+  name: "Ghost Engine"
+  description: >
+    Decentralized AI Agent Framework — P2P orchestration + IPFS storage +
+    Redis task queue + Kyber1024 quantum-safe P2P handshake
+  version: "2.2.0"
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ---------------------------------------------------------------------------
+  # Ghost Engine — Core autonomous agent
+  # ---------------------------------------------------------------------------
+  ghost-engine:
+    image: ghcr.io/YOUR_ORG/ghost-engine:latest
+    depends_on:
+      - ipfs-node
+      - redis-node
+    env:
+      # Core
+      - PORT=8000
+      - LOG_LEVEL=INFO
+      - BROWSER_HEADLESS=1
+      - GHOST_MODE=dashboard
+      - ENABLE_P2P=true
+      - ENABLE_ARWEAVE_ARCHIVE=true
+      - ENABLE_QUANTUM_HANDSHAKE=true
+
+      # LLM / AI
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_MODEL=models/gemini-2.0-flash
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=llama-3.1-8b-instant
+
+      # Services
+      - GMAIL_USER=${GMAIL_USER}
+      - GMAIL_PASS=${GMAIL_PASS}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - CLOUDFLARE_TOKEN=${CLOUDFLARE_TOKEN}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+
+      # IPFS sidecar
+      - IPFS_MULTIADDR=/dns/ipfs-node/tcp/5001/http
+      - IPFS_GATEWAY=http://ipfs-node:8080
+
+      # Redis sidecar
+      - REDIS_URL=redis://redis-node:6379/0
+      - REDIS_TASK_QUEUE_KEY=ghost:tasks
+
+      # Arweave (permanent archive)
+      - ARWEAVE_WALLET_PATH=/app/arweave-key.json
+      - ARWEAVE_GATEWAY=https://arweave.net
+      - ARWEAVE_ARCHIVE_INTERVAL=3600
+
+      # P2P Swarm
+      - SWARM_PORT=9876
+      - BROADCAST_PORT=9877
+      - KADEMLIA_PORT=8468
+      - QUANTUM_PORT=9875
+
+      # Self-healing registry (Polygon)
+      - REGISTRY_RPC=https://polygon-rpc.com
+      - REGISTRY_CONTRACT=${REGISTRY_CONTRACT:-0x0000000000000000000000000000000000000000}
+      - PEER_ID=${PEER_ID:-ghost-engine-akash-1}
+    expose:
+      - port: 8000
+        as: 8000
+        to:
+          - global: true
+      - port: 9876
+        as: 9876
+        to:
+          - global: true
+      - port: 9877
+        as: 9877
+        proto: udp
+      - port: 8468
+        as: 8468
+      - port: 9875
+        as: 9875
+        to:
+          - global: true
+    resources:
+      cpu:
+        units: 2.0
+      memory:
+        size: 4Gi
+      storage:
+        size: 10Gi
+
+  # ---------------------------------------------------------------------------
+  # IPFS Node — Decentralized content-addressed storage
+  # ---------------------------------------------------------------------------
+  ipfs-node:
+    image: ipfs/kubo:latest
+    env:
+      - IPFS_PROFILE=server
+      - IPFS_EXPERIMENTAL_FILESTORE_ENABLED=true
+    expose:
+      - port: 4001
+        as: 4001
+        to:
+          - global: true
+      - port: 5001
+        as: 5001
+      - port: 8080
+        as: 8080
+        to:
+          - global: true
+    resources:
+      cpu:
+        units: 1.0
+      memory:
+        size: 2Gi
+      storage:
+        size: 20Gi
+
+  # ---------------------------------------------------------------------------
+  # Redis Node — Persistent task queue + state cache
+  # ---------------------------------------------------------------------------
+  redis-node:
+    image: redis:7-alpine
+    args:
+      - redis-server
+      - --appendonly yes
+      - --save 60 1000
+      - --requirepass ${REDIS_PASSWORD:-}
+    env:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    expose:
+      - port: 6379
+        as: 6379
+    resources:
+      cpu:
+        units: 0.5
+      memory:
+        size: 512Mi
+      storage:
+        size: 5Gi
+
+# =============================================================================
+# PROFILES — Compute & Placement
+# =============================================================================
+profiles:
+  compute:
+    ghost-engine:
+      resources:
+        cpu:
+          units: 2.0
+        memory:
+          size: 4Gi
+        storage:
+          size: 10Gi
+    ipfs-node:
+      resources:
+        cpu:
+          units: 1.0
+        memory:
+          size: 2Gi
+        storage:
+          size: 20Gi
+    redis-node:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 512Mi
+        storage:
+          size: 5Gi
+
+  placement:
+    dcentral:
+      attributes:
+        region: us-west
+      signedBy:
+        anyOf:
+          - "akash136v6pq9z3c5d0wqpq63rc2q6k3q3k7qz0yq0g0"
+      pricing:
+        ghost-engine:
+          denom: uakt
+          amount: 1000
+        ipfs-node:
+          denom: uakt
+          amount: 500
+        redis-node:
+          denom: uakt
+          amount: 200
+
+# =============================================================================
+# DEPLOYMENT — Replica counts
+# =============================================================================
+deployment:
+  ghost-engine:
+    dcentral:
+      profile: ghost-engine
+      count: 3                # 3 replicas for P2P quorum + fault tolerance
+  ipfs-node:
+    dcentral:
+      profile: ipfs-node
+      count: 1                # 1 IPFS node; data pinned via IPFS Cluster
+  redis-node:
+    dcentral:
+      profile: redis-node
+      count: 1                # 1 Redis; failover via Redis Sentinel (future)

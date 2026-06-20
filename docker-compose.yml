@@ -1,0 +1,240 @@
+# =============================================================================
+# Ghost Engine — Docker Compose
+# Decentralized AI Agent with IPFS + Redis + Optional Ollama/Tor sidecars
+# =============================================================================
+# Start all services:        docker compose up -d
+# Start with Ollama LLM:     docker compose --profile llm up -d
+# Start with Tor anonymity:  docker compose --profile tor up -d
+# Full stack:                docker compose --profile llm --profile tor up -d
+# =============================================================================
+
+version: "3.9"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  ghost-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  ipfs-data:
+    driver: local
+  ipfs-staging:
+    driver: local
+  redis-data:
+    driver: local
+  ollama-models:
+    driver: local
+  agent-logs:
+    driver: local
+  agent-data:
+    driver: local
+  browser-profile:
+    driver: local
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ---------------------------------------------------------------------------
+  # Ghost Engine — Core Agent
+  # ---------------------------------------------------------------------------
+  ghost-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghost-engine:latest
+    container_name: ghost-engine
+    restart: unless-stopped
+    networks:
+      - ghost-net
+    ports:
+      - "8000:8000"    # FastAPI dashboard
+      - "9876:9876"    # P2P swarm TCP
+      - "9877:9877/udp" # P2P swarm UDP broadcast
+      - "8468:8468"    # Kademlia DHT
+    env_file:
+      - .env
+    environment:
+      # Core
+      - PORT=8000
+      - LOG_LEVEL=INFO
+      - BROWSER_HEADLESS=1
+      - BROWSER_USER_DATA_DIR=/app/browser_profile
+      # IPFS — connect to sidecar
+      - IPFS_MULTIADDR=/dns/ipfs-node/tcp/5001/http
+      - IPFS_GATEWAY=http://ipfs-node:8080
+      # Redis — task queue (replaces JSON file)
+      - REDIS_URL=redis://redis:6379/0
+      # P2P
+      - SWARM_PORT=9876
+      - BROADCAST_PORT=9877
+      - KADEMLIA_PORT=8468
+      - ENABLE_P2P=true
+      # Self-healing registry (Polygon)
+      - REGISTRY_RPC=https://polygon-rpc.com
+      - REGISTRY_CONTRACT=0x0000000000000000000000000000000000000000
+    volumes:
+      - agent-logs:/app/agent_logs
+      - agent-data:/app/agent_data
+      - browser-profile:/app/browser_profile
+      - ./session_data:/app/session_data
+      - ./agent_config.json:/app/agent_config.json:ro
+    depends_on:
+      redis:
+        condition: service_started
+      ipfs-node:
+        condition: service_healthy
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # IPFS Node — Decentralized Immutable Storage
+  # ---------------------------------------------------------------------------
+  ipfs-node:
+    image: ipfs/kubo:latest
+    container_name: ghost-ipfs
+    restart: unless-stopped
+    networks:
+      - ghost-net
+    ports:
+      - "4001:4001"    # libp2p (IPFS swarm)
+      - "5001:5001"    # HTTP API
+      - "8080:8080"    # Gateway
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_EXPERIMENTAL_FILESTORE_ENABLED=true
+    volumes:
+      - ipfs-data:/data/ipfs
+      - ipfs-staging:/export
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    # Pin critical CIDs on startup via init script
+    # Uncomment and add your agent's state CIDs:
+    # command: >
+    #   sh -c "ipfs init && ipfs pin add QmYourCID && ipfs daemon --migrate=true"
+
+  # ---------------------------------------------------------------------------
+  # Redis — Task Queue / State Cache
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ghost-redis
+    restart: unless-stopped
+    networks:
+      - ghost-net
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Ollama — Local LLM Inference (optional, enable with --profile llm)
+  # ---------------------------------------------------------------------------
+  ollama:
+    profiles: ["llm"]
+    image: ollama/ollama:latest
+    container_name: ghost-ollama
+    restart: unless-stopped
+    networks:
+      - ghost-net
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=300
+    logging: *default-logging
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # Pull default model on startup
+    entrypoint: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull llama3.2:1b &&
+             wait"
+
+  # ---------------------------------------------------------------------------
+  # Tor Proxy — Anonymous Networking (optional, enable with --profile tor)
+  # ---------------------------------------------------------------------------
+  tor-proxy:
+    profiles: ["tor"]
+    image: ghcr.io/nicolai86/tor-docker:latest
+    container_name: ghost-tor
+    restart: unless-stopped
+    networks:
+      - ghost-net
+    ports:
+      - "9050:9050"    # SOCKS5 proxy
+      - "9051:9051"    # Control port
+    logging: *default-logging
+    cap_add:
+      - NET_ADMIN
+    # Custom torrc
+    volumes:
+      - ./torrc:/etc/tor/torrc:ro
+
+  # ---------------------------------------------------------------------------
+  # IPFS Cluster (Optional) — For production pinning across peers
+  # ---------------------------------------------------------------------------
+  ipfs-cluster:
+    profiles: ["cluster"]
+    image: ipfs/ipfs-cluster:latest
+    container_name: ghost-ipfs-cluster
+    restart: unless-stopped
+    networks:
+      - ghost-net
+    ports:
+      - "9094:9094"    # Cluster REST API
+      - "9095:9095"    # Cluster IPFS proxy
+      - "9096:9096"    # Cluster libp2p
+    volumes:
+      - ipfs-data:/data/ipfs
+    environment:
+      - CLUSTER_IPFSHTTP_NODEMULTIADDRESS=/dns4/ipfs-node/tcp/5001
+      - CLUSTER_RENDEZVOUS=ghost-engine-cluster
+    depends_on:
+      ipfs-node:
+        condition: service_healthy

@@ -1,0 +1,27 @@
+import os
+import subprocess
+
+def create_agent_folder(folder_name):
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+        # Nayi file banayein
+        with open(os.path.join(folder_name, "agent.py"), "w") as f:
+            f.write("import os\nimport google.generativeai as genai\n\n# API KEY from system\napi_key = os.getenv('ACCESS_KEY')\ngenai.configure(api_key=api_key)\nmodel = genai.GenerativeModel('gemini-1.5-flash')\n\ndef run():\n    print('Agent active hai...')\n    # Yahan logic likhein\n\nif __name__ == '__main__': run()")
+        print(f"Folder '{folder_name}' aur agent.py ban gaya!")
+    else:
+        print("Folder pehle se mojood hai.")
+
+def update_code(folder_name, new_code):
+    with open(os.path.join(folder_name, "agent.py"), "w") as f:
+        f.write(new_code)
+    print("Code update ho gaya!")
+
+# Command line interface
+if __name__ == "__main__":
+    import sys
+    cmd = sys.argv[1]
+    if cmd == "create":
+        create_agent_folder(sys.argv[2])
+    elif cmd == "update":
+        # Yahan aap apna naya code string mein pass kar sakte hain
+        update_code(sys.argv[2], sys.argv[3])

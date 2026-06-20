@@ -1,0 +1,66 @@
+# =============================================================================
+# Ghost Engine — P2P Swarm Connectivity Test
+# Spins up two ghost_swarm.py nodes on the same bridge network
+# Usage: docker compose -f docker-compose.swarm.yml up --build
+# Check:  python check_swarm.py
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Node 1 — seed / bootstrap peer
+  # ---------------------------------------------------------------------------
+  node1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.swarm
+    container_name: ghost-swarm-node1
+    networks:
+      - ghost-swarm-net
+    ports:
+      - "9876:9876"      # TCP mesh
+      - "8468:8468/udp"  # Kademlia DHT
+    environment:
+      - NODE_ID=ghost-node-alpha
+      - SWARM_PORT=9876
+      - ENABLE_DHT=0
+    volumes:
+      - swarm-status:/shared
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /shared/status_ghost-node-alpha.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Node 2 — connects to node1 via SEED_PEER
+  # ---------------------------------------------------------------------------
+  node2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.swarm
+    container_name: ghost-swarm-node2
+    networks:
+      - ghost-swarm-net
+    ports:
+      - "9878:9876"      # TCP mesh (mapped to different host port)
+      - "8469:8468/udp"  # Kademlia DHT
+    environment:
+      - NODE_ID=ghost-node-beta
+      - SWARM_PORT=9876
+      - SEED_PEER=node1:9876
+      - ENABLE_DHT=0
+    volumes:
+      - swarm-status:/shared
+    depends_on:
+      node1:
+        condition: service_healthy
+
+networks:
+  ghost-swarm-net:
+    driver: bridge
+
+volumes:
+  swarm-status:
+    driver: local

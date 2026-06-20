@@ -1,0 +1,31 @@
+# Ghost Engine — Tor Configuration
+# Used by docker-compose --profile tor
+
+SocksPort 0.0.0.0:9050
+ControlPort 0.0.0.0:9051
+
+# Allow the ghost-engine container to control Tor for identity rotation
+CookieAuthentication 1
+CookieAuthFile /var/lib/tor/control_auth_cookie
+CookieAuthFileGroupReadable 1
+
+# Don't log to disk — RAM-only in shadow mode
+Log notice stdout
+
+# Exit policies (strict: no exits, circuit only for our traffic)
+ExitPolicy reject *:*
+ExitRelay 0
+
+# Bridge/obfuscation support
+ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy
+UseBridges 0
+
+# Performance
+CircuitBuildTimeout 30
+LearnCircuitBuildTimeout 0
+MaxCircuitDirtiness 600
+NumEntryGuards 4
+
+# Enforce strict nodes (geoip exclusion if needed)
+# ExcludeNodes {pk},{ir},{cn},{ru},{sy}
+# StrictNodes 1
