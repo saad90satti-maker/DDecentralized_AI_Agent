@@ -70,6 +70,9 @@ env/
 myenv/
 virtualenv/
 
+# CI/CD (workflow scope required for PAT)
+.github/
+
 # Docker
 .dockerignore
 
