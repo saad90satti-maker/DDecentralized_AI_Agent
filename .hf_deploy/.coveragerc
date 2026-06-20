@@ -1,0 +1,95 @@
+# =============================================================================
+# Ghost Engine — Coverage Configuration
+# =============================================================================
+
+[run]
+# Source directories to measure
+source = .
+    tests
+
+# Include only relevant project modules
+include =
+    *.py
+    tests/*.py
+
+# Omit non-application code
+omit =
+    __pycache__/*
+    .git/*
+    */__pycache__/*
+    agent_logs/*
+    agent_data/*
+    session_data/*
+    frames/*
+    scratch/*
+    docs/*
+    scripts/*
+    *.md
+    *.txt
+    *.json
+    *.db
+    *.bat
+    *.sh
+    Dockerfile*
+    docker-compose*
+    deploy.yaml
+    torrc
+    Procfile
+    render.yaml
+
+# Enable branch coverage
+branch = true
+
+# Enable subprocess (parallel) coverage
+parallel = true
+concurrency = multiprocessing
+
+# Relative file paths in reports
+relative_files = true
+
+# Precision for coverage percentages
+precision = 2
+
+[report]
+# Output format
+show_missing = true
+skip_covered = false
+skip_empty = true
+sort = Miss
+
+# Minimum coverage percentage for CI pass
+fail_under = 60.00
+
+# Regexes for partial branch coverage
+exclude_lines =
+    pragma: no cover
+    pragma: nocover
+    pragma: no-cover
+    def __repr__
+    def __str__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if 0:
+    if False:
+    if self.debug:
+    if os.getenv:
+    logger.debug
+    logging.debug
+
+[html]
+directory = coverage_report
+title = Ghost Engine Coverage Report
+extra_css = 
+
+[xml]
+output = coverage_report/coverage.xml
+package_depth = 3
+
+[json]
+output = coverage_report/coverage.json
+pretty_print = true
+
+[paths]
+source =
+    .
+    /app

@@ -1,0 +1,31 @@
+services:
+  - type: web_service
+    name: decentralized-ai-agent
+    env: python
+    plan: starter
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn manager:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GMAIL_USER
+        fromSecret: GMAIL_USER
+      - key: GMAIL_PASS
+        fromSecret: GMAIL_PASS
+      - key: HUGGINGFACE_TOKEN
+        fromSecret: HUGGINGFACE_TOKEN
+      - key: GROQ_API_KEY
+        fromSecret: GROQ_API_KEY
+      - key: GITHUB_TOKEN
+        fromSecret: GITHUB_TOKEN
+      - key: CLOUDFLARE_TOKEN
+        fromSecret: CLOUDFLARE_TOKEN
+      - key: DISCORD_TOKEN
+        fromSecret: DISCORD_TOKEN
+      - key: DISCORD_CHANNEL_ID
+        fromSecret: DISCORD_CHANNEL_ID
+      - key: PUBLIC_WEBHOOK_URL
+        fromSecret: PUBLIC_WEBHOOK_URL
+      - key: HERMES_URL
+        value: http://localhost:11434
+      - key: HERMES_MODEL
+        value: llama3.2:1b
