@@ -17,10 +17,10 @@ BASE_DIR = Path(__file__).resolve().parent
 COOKIE_DIR = BASE_DIR / "session_data"
 COOKIE_DIR.mkdir(exist_ok=True)
 
-PROFILE_DIR = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data"
-PROFILE_NAME = "Profile_Auto"
-GMAIL_USER = "saad90satti@gmail.com"
-GMAIL_PASS = "saad2027@saadface"
+PROFILE_DIR = os.getenv("BROWSER_USER_DATA_DIR", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data"))
+PROFILE_NAME = os.getenv("GMAIL_PROFILE", "Profile_Auto")
+GMAIL_USER = os.getenv("GMAIL_USER", "")
+GMAIL_PASS = os.getenv("GMAIL_PASS", "")
 
 
 @dataclass

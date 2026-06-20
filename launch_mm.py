@@ -1,8 +1,8 @@
 import json, os, time, shutil, socket, subprocess
 from playwright.sync_api import sync_playwright
 
-PROFILE_DIR = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data\Profile_Auto"
-CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+PROFILE_DIR = os.getenv("BROWSER_USER_DATA_DIR", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data")) + "\\" + os.getenv("GMAIL_PROFILE", "Profile_Auto")
+CHROME_EXE = os.getenv("CHROME_PATH", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 EXT_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
 EXT_VER = "13.35.1.0"
 EXT_SRC = os.path.join(PROFILE_DIR, "Extensions", EXT_ID, EXT_VER + "_0")
@@ -122,7 +122,7 @@ with sync_playwright() as pw:
             # Fill password
             pw_input = page.query_selector("input[type='password']")
             if pw_input:
-                pw_input.fill("03255152854")
+                pw_input.fill(os.getenv("METAMASK_PASSWORD", ""))
                 print("Password filled", flush=True)
                 # Click unlock
                 unlock_btn = page.query_selector("button:has-text('Unlock')")

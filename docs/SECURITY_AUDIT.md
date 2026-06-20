@@ -19,12 +19,12 @@
 class ServiceConfig:
     Gmail = {
         "user": os.getenv("GMAIL_USER", "saad90satti@gmail.com"),  # ❌ EXPOSED
-        "pass": os.getenv("GMAIL_PASS", "saad2027@saadface")       # ❌ EXPOSED
+        "pass": os.getenv("GMAIL_PASS", "your_gmail_app_password")       # ❌ EXPOSED
     }
-    HuggingFace = os.getenv("HUGGINGFACE_TOKEN", "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")  # ❌ EXPOSED
-    Groq = os.getenv("GROQ_API_KEY", "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")  # ❌ EXPOSED
-    GitHub = os.getenv("GITHUB_TOKEN", "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")  # ❌ EXPOSED
-    Cloudflare = os.getenv("CLOUDFLARE_TOKEN", "cfut_0Gq3f7IvtFuRdhQO12g3YKk7tn1znirppJxJTvfs940aaca5")  # ❌ EXPOSED
+    HuggingFace = os.getenv("HUGGINGFACE_TOKEN", "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ EXPOSED
+    Groq = os.getenv("GROQ_API_KEY", "gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ EXPOSED
+    GitHub = os.getenv("GITHUB_TOKEN", "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ EXPOSED
+    Cloudflare = os.getenv("CLOUDFLARE_TOKEN", "cfut_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ EXPOSED
     Discord = os.getenv("DISCORD_TOKEN", "MTUxNjM0MjAxMTMyNDc5Njk5OA.GB-70v.RZNBky74axckcxFlzPXwePOmbr-BUxvalqUwig")  # ❌ EXPOSED
 ```
 
@@ -558,3 +558,4 @@ def sign_request(data: str, secret: str) -> str:
 **Status**: 🚨 **REQUIRES IMMEDIATE ACTION**
 
 Do not deploy this system to production until all CRITICAL issues are resolved.
+

@@ -11,12 +11,12 @@
 class ServiceConfig:
     Gmail = {
         "user": os.getenv("GMAIL_USER", "saad90satti@gmail.com"),  # ❌ REMOVE DEFAULT
-        "pass": os.getenv("GMAIL_PASS", "saad2027@saadface")       # ❌ REMOVE DEFAULT
+        "pass": os.getenv("GMAIL_PASS", "your_gmail_app_password")       # ❌ REMOVE DEFAULT
     }
-    HuggingFace = os.getenv("HUGGINGFACE_TOKEN", "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")  # ❌ REMOVE
-    Groq = os.getenv("GROQ_API_KEY", "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")  # ❌ REMOVE
-    GitHub = os.getenv("GITHUB_TOKEN", "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")  # ❌ REMOVE
-    Cloudflare = os.getenv("CLOUDFLARE_TOKEN", "cfut_0Gq3f7IvtFuRdhQO12g3YKk7tn1znirppJxJTvfs940aaca5")  # ❌ REMOVE
+    HuggingFace = os.getenv("HUGGINGFACE_TOKEN", "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ REMOVE
+    Groq = os.getenv("GROQ_API_KEY", "gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ REMOVE
+    GitHub = os.getenv("GITHUB_TOKEN", "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ REMOVE
+    Cloudflare = os.getenv("CLOUDFLARE_TOKEN", "cfut_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")  # ❌ REMOVE
     Discord = os.getenv("DISCORD_TOKEN", "MTUxNjM0MjAxMTMyNDc5Njk5OA.GB-70v.RZNBky74axckcxFlzPXwePOmbr-BUxvalqUwig")  # ❌ REMOVE
 ```
 
@@ -389,3 +389,4 @@ Before deploying to production:
 3. Run security tests
 4. Revoke all exposed credentials
 5. Deploy to production with confidence
+

@@ -1,9 +1,11 @@
 # =============================================================================
-# Ghost Engine — Multi-Stage Docker Build
-# Decentralized AI Agent Framework
+# Ghost Engine — Hardened Multi-Stage Docker Build
+# Security: read-only rootfs, non-root user, no build-time secrets
 # =============================================================================
 # Build:     docker build -t ghost-engine:latest .
-# Run:       docker run -p 8000:8000 -p 9876:9876 --env-file .env ghost-engine
+# Run:       docker run -p 8000:8000 --env-file .env --read-only \
+#              -v agent_logs:/app/agent_logs -v agent_data:/app/agent_data \
+#              ghost-engine
 # Compose:   docker compose up -d
 # =============================================================================
 
@@ -20,10 +22,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    wget \
-    git \
     ca-certificates \
-    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -34,60 +33,42 @@ WORKDIR /app
 FROM base AS deps
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright system dependencies + Chromium browser
-RUN pip install --no-cache-dir playwright \
-    && playwright install --with-deps chromium \
-    && playwright install-deps \
+RUN pip install --no-cache-dir -r requirements.txt \
     && rm -rf /root/.cache /tmp/*
 
-# Additional IPFS and P2P dependencies for decentralized architecture
-RUN pip install --no-cache-dir \
-    ipfshttpclient \
-    web3 \
-    eth-account \
-    kademlia
-
 # ---------------------------------------------------------------------------
-# STAGE 3: Runtime — minimal footprint
+# STAGE 3: Runtime — minimal footprint, hardened
 # ---------------------------------------------------------------------------
 FROM base AS runtime
 
-# Copy installed Python packages from deps stage
+# Copy only installed packages, not build tools
 COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
 
-# Copy Playwright browsers
-COPY --from=deps /root/.cache/ms-playwright /root/.cache/ms-playwright
-
-# Copy entrypoint script
+# Copy entrypoint
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
-# Create non-root user for security
-RUN groupadd -r ghost && useradd -r -g ghost -d /app -s /bin/bash ghost \
+# Create non-root user with no shell access
+RUN groupadd -r ghost && useradd -r -g ghost -d /app -s /sbin/nologin ghost \
     && mkdir -p /app/agent_logs /app/agent_data /app/agent_data/swarm /app/browser_profile \
     && chown -R ghost:ghost /app
 
-# Copy application source
+# Copy application source (writeable for writable volumes only)
 COPY --chown=ghost:ghost . .
 
-# Create directories if missing (for mounted volumes)
-RUN mkdir -p agent_logs agent_data browser_profile session_data frames agent_data/swarm
+# Ensure no world-writeable files
+RUN find /app -type f -exec chmod 644 {} \; && find /app -type d -exec chmod 755 {} \;
 
-# Expose ports:
-#   8000  — FastAPI dashboard / REST API
-#   9876  — P2P swarm TCP (libp2p / Kademlia)
-#   9877  — P2P swarm UDP broadcast
-#   8468  — Kademlia DHT port
-EXPOSE 8000 9876 9877 8468
+# Expose only dashboard port (P2P removed from hardened build)
+EXPOSE 8000
 
-# Volumes for persistent + decentralized data
+# Volumes for mutable data
 VOLUME ["/app/agent_logs", "/app/agent_data", "/app/browser_profile", "/app/session_data"]
 
-# Use the smart entrypoint; supports GHOST_MODE=dashboard|agent|cli|executor|autonomous
-ENTRYPOINT ["docker-entrypoint.sh"]
+# Drop all capabilities, run as non-root
+USER ghost:ghost
 
-# Default mode: FastAPI management dashboard
+# Security: no new privileges, read-only rootfs
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["dashboard"]

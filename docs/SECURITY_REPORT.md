@@ -21,12 +21,12 @@ Your **Ghost Engine** system is **VULNERABLE** and **MUST NOT** be deployed to p
 Seven API tokens are visible in plain text in `manager.py`:
 
 ```
-Gmail Password:      saad2027@saadface
-Groq API Key:        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
-GitHub Token:        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
+Gmail Password:      your_gmail_app_password
+Groq API Key:        gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GitHub Token:        ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Discord Token:       MTUxNjM0MjAxMTMyNDc5Njk5OA.GB-70v.RZNBky74axckcxFlzPXwePOmbr-BUxvalqUwig
-Cloudflare Token:    cfut_0Gq3f7IvtFuRdhQO12g3YKk7tn1znirppJxJTvfs940aaca5
-HuggingFace Token:   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
+Cloudflare Token:    cfut_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+HuggingFace Token:   hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 **Impact**: Anyone with access to source code can:
@@ -104,8 +104,8 @@ POST /api/discord        ← Anyone can send Discord messages
 Real API keys are in `.env.example` instead of placeholders:
 
 ```env
-❌ GROQ_API_KEY=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
-❌ GITHUB_TOKEN=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
+❌ GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+❌ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ❌ DISCORD_TOKEN=MTUxNjM0MjAxMTMyNDc5Njk5OA.GB-70v.RZNBky74axckcxFlzPXwePOmbr-BUxvalqUwig
 ```
 
@@ -420,3 +420,4 @@ For questions about specific security issues, reference:
 **Next Step**: Execute SECURITY_ACTION_PLAN.md Phase 1 & 2 today
 
 Your Ghost Engine is powerful but currently vulnerable. Implementing these fixes will make it production-ready and secure. 🛡️
+

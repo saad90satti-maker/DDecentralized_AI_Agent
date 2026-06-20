@@ -1,10 +1,10 @@
 from playwright.sync_api import sync_playwright
 import time, os
 
-PROFILE_DIR = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data"
-EXT_PATH = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data\Profile_Auto\Extensions\nkbihfbeogaeaoehlefnkodbefgpgknn\13.35.1.0_0"
-EXT_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
-MM_PASS = "03255152854"
+PROFILE_DIR = os.getenv("BROWSER_USER_DATA_DIR", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data"))
+EXT_PATH = os.getenv("METAMASK_EXT_PATH", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data\Profile_Auto\Extensions\nkbihfbeogaeaoehlefnkodbefgpgknn\13.35.1.0_0"))
+EXT_ID = os.getenv("METAMASK_EXT_ID", "nkbihfbeogaeaoehlefnkodbefgpgknn")
+MM_PASS = os.getenv("METAMASK_PASSWORD", "")
 
 with sync_playwright() as p:
     browser = p.chromium.launch_persistent_context(

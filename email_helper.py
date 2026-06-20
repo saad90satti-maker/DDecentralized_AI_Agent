@@ -2,10 +2,10 @@ import json, os, time
 from playwright.sync_api import sync_playwright
 
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "gmail_cookies.json")
-PROFILE_DIR = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data"
-GMAIL_USER = "saad90satti@gmail.com"
-GMAIL_PASS = "saad2027@saadface"
-PROFILE = "Profile_Auto"
+PROFILE_DIR = os.getenv("BROWSER_USER_DATA_DIR", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data"))
+GMAIL_USER = os.getenv("GMAIL_USER", "")
+GMAIL_PASS = os.getenv("GMAIL_PASS", "")
+PROFILE = os.getenv("GMAIL_PROFILE", "Profile_Auto")
 
 def get_gmail_page(p, headless=False):
     browser = p.chromium.launch_persistent_context(

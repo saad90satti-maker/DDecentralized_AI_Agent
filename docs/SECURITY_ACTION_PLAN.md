@@ -17,12 +17,12 @@
 - **Impact**: Remote attackers can steal all API credentials from source code
 - **Location**: `manager.py` lines 54-62 (ServiceConfig class)
 - **Evidence**: 7 exposed tokens found:
-  - Gmail: `saad2027@saadface`
-  - Groq: `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`
-  - GitHub: `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`
+  - Gmail: `your_gmail_app_password`
+  - Groq: `gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+  - GitHub: `ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
   - Discord: `MTUxNjM0MjAxMTMyNDc5Njk5OA.GB-70v.RZNBky74axckcxFlzPXwePOmbr-BUxvalqUwig`
-  - Cloudflare: `cfut_0Gq3f7IvtFuRdhQO12g3YKk7tn1znirppJxJTvfs940aaca5`
-  - HuggingFace: `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`
+  - Cloudflare: `cfut_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+  - HuggingFace: `hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
 - **Action Items**:
   1. ❌ **REVOKE ALL THESE TOKENS NOW** (GitHub, Discord, Cloudflare, Groq, HuggingFace)
      - Go to GitHub Settings > Developer settings > Personal access tokens > Revoke
@@ -280,3 +280,4 @@ If you believe credentials have been compromised:
 **Last Updated**: $(date)
 **Status**: IMPLEMENTATION PENDING
 **Owner**: Ghost Engine Security Team
+

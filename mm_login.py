@@ -1,10 +1,10 @@
 import subprocess, time, os, socket, json
 from playwright.sync_api import sync_playwright
 
-PROFILE_DIR = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data\Profile_Auto"
-CHROME_EXE = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-EXT_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
-MM_PASS = "03255152854"
+PROFILE_DIR = os.getenv("BROWSER_USER_DATA_DIR", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data")) + "\\" + os.getenv("GMAIL_PROFILE", "Profile_Auto")
+CHROME_EXE = os.getenv("CHROME_PATH", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+EXT_ID = os.getenv("METAMASK_EXT_ID", "nkbihfbeogaeaoehlefnkodbefgpgknn")
+MM_PASS = os.getenv("METAMASK_PASSWORD", "")
 
 # Gracefully close Chrome (no taskkill)
 os.system('taskkill /f /im chrome.exe >nul 2>&1')

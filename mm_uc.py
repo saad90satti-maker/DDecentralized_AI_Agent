@@ -1,10 +1,10 @@
 import undetected_chromedriver as uc
 import time, os, json
 
-PROFILE_DIR = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data"
-EXT_PATH = r"C:\Users\zafar\AppData\Local\Google\Chrome\User Data\Profile_Auto\Extensions\nkbihfbeogaeaoehlefnkodbefgpgknn\13.35.1.0_0"
-EXT_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
-MM_PASS = "03255152854"
+PROFILE_DIR = os.getenv("BROWSER_USER_DATA_DIR", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data"))
+EXT_PATH = os.getenv("METAMASK_EXT_PATH", os.path.join(os.environ.get("USERPROFILE", ""), r"AppData\Local\Google\Chrome\User Data\Profile_Auto\Extensions\nkbihfbeogaeaoehlefnkodbefgpgknn\13.35.1.0_0"))
+EXT_ID = os.getenv("METAMASK_EXT_ID", "nkbihfbeogaeaoehlefnkodbefgpgknn")
+MM_PASS = os.getenv("METAMASK_PASSWORD", "")
 
 os.system("taskkill /f /im chrome.exe >nul 2>&1")
 time.sleep(3)
