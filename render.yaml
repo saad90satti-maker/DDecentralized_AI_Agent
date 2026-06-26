@@ -4,64 +4,72 @@ services:
     env: python
     plan: starter
     region: oregon
-    buildCommand: pip install -r requirements.txt
-    startCommand: >
-      uvicorn manager:app --host 0.0.0.0 --port $PORT
+    buildCommand: |
+      pip install -r requirements-render.txt
+      playwright install chromium --with-deps 2>/dev/null || true
+    startCommand: uvicorn manager:app --host 0.0.0.0 --port $PORT --workers 1 --limit-concurrency 20
+    healthCheckPath: /api/health
     envVars:
+      # LLM
+      - key: GEMINI_API_KEY
+        fromSecret: GEMINI_API_KEY
+      - key: GEMINI_API_MODEL
+        value: models/gemini-2.5-flash
+      - key: GROQ_API_KEY
+        fromSecret: GROQ_API_KEY
+      # Google
       - key: GMAIL_USER
         fromSecret: GMAIL_USER
       - key: GMAIL_PASS
         fromSecret: GMAIL_PASS
+      # HuggingFace
       - key: HUGGINGFACE_TOKEN
         fromSecret: HUGGINGFACE_TOKEN
-      - key: GROQ_API_KEY
-        fromSecret: GROQ_API_KEY
+      - key: HF_API_TOKEN
+        fromSecret: HUGGINGFACE_TOKEN
+      # GitHub
       - key: GITHUB_TOKEN
         fromSecret: GITHUB_TOKEN
+      # Cloudflare
       - key: CLOUDFLARE_TOKEN
         fromSecret: CLOUDFLARE_TOKEN
+      # Discord
       - key: DISCORD_TOKEN
         fromSecret: DISCORD_TOKEN
       - key: DISCORD_CHANNEL_ID
         fromSecret: DISCORD_CHANNEL_ID
-      - key: PUBLIC_WEBHOOK_URL
-        fromSecret: PUBLIC_WEBHOOK_URL
-      - key: HERMES_URL
-        value: http://localhost:11434
-      - key: HERMES_MODEL
-        value: llama3.2:1b
+      # Social
+      - key: X_API_KEY
+        fromSecret: X_API_KEY
+      - key: X_API_KEY_SECRET
+        fromSecret: X_API_KEY_SECRET
+      - key: X_ACCESS_TOKEN
+        fromSecret: X_ACCESS_TOKEN
+      - key: X_ACCESS_TOKEN_SECRET
+        fromSecret: X_ACCESS_TOKEN_SECRET
+      - key: TELEGRAM_BOT_TOKEN
+        fromSecret: TELEGRAM_BOT_TOKEN
+      - key: TELEGRAM_CHAT_ID
+        fromSecret: TELEGRAM_CHAT_ID
+      # Swarm
       - key: SWARM_SECRET
         fromSecret: SWARM_SECRET
       - key: NODE_ID
-        value: render-ghost-node
+        value: render-ghost-node-1
       - key: DHT_ENABLED
-        value: "true"
-      - key: DHT_PORT
-        value: "8468"
+        value: "false"
       - key: TRANSMISSION_MODE
         value: downlink
       - key: SWARM_HOST
         value: "0.0.0.0"
-      - key: ENABLE_DHT
-        value: "1"
-
-  - type: cron_job
-    name: ghostsignal-passive-listener
-    env: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt numpy reedsolo kademlia
-    startCommand: python -c "
-import asyncio, os, sys
-os.chdir('/opt/render/project/src')
-sys.path.insert(0, '.')
-os.environ['SWARM_SECRET'] = os.getenv('SWARM_SECRET', 'default')
-import stealth_beyond_sat
-asyncio.run(stealth_beyond_sat.start_passive_listener(force_active=True))
-"
-    envVars:
-      - key: SWARM_SECRET
-        fromSecret: SWARM_SECRET
-      - key: NODE_ID
-        value: render-ghost-signal
-      - key: TRANSMISSION_MODE
-        value: downlink
+      # Local (not used on Render but required for startup)
+      - key: HERMES_URL
+        value: http://localhost:11434
+      - key: HERMES_MODEL
+        value: llama3.2:1b
+      # Browser
+      - key: HEADLESS_BROWSER
+        value: "true"
+      # Logging
+      - key: LOG_LEVEL
+        value: INFO
