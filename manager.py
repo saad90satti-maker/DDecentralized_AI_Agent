@@ -96,6 +96,23 @@ except ImportError:
     seed_reassembly = None
     _SEED_REASSEMBLY_AVAILABLE = False
 
+# Publication & Knowledge Systems
+try:
+    from ecosystem_publication_api import router as publication_router, init_pipeline as init_pub_pipeline
+    _PUBLICATION_AVAILABLE = True
+except ImportError as e:
+    publication_router = None
+    _PUBLICATION_AVAILABLE = False
+    logger.debug("Publication API not available: %s", e)
+
+try:
+    from ecosystem_knowledge_api import router as knowledge_router, init_knowledge as init_know_system
+    _KNOWLEDGE_AVAILABLE = True
+except ImportError as e:
+    knowledge_router = None
+    _KNOWLEDGE_AVAILABLE = False
+    logger.debug("Knowledge API not available: %s", e)
+
 # ============= DIRECTORIES & LOGGING =============
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "agent_logs"
@@ -1381,12 +1398,31 @@ def _start_global_ignition():
 app = FastAPI(title="Decentralized AI Agent Dashboard")
 add_security_headers(app)
 
+# Include publication & knowledge routers
+if publication_router is not None:
+    app.include_router(publication_router)
+    logger.info("Publication API router registered")
+if knowledge_router is not None:
+    app.include_router(knowledge_router)
+    logger.info("Knowledge API router registered")
+
 @app.on_event("startup")
 def on_startup():
     model_router.start_terminal_monitor()
     logger.info("Model router terminal monitor started")
     _start_swarm_and_scheduler()
     _start_global_ignition()
+    # Initialize publication & knowledge systems
+    try:
+        init_pub_pipeline()
+        logger.info("Publication pipeline initialized")
+    except Exception as exc:
+        logger.warning("Publication pipeline init failed: %s", exc)
+    try:
+        init_know_system()
+        logger.info("Knowledge system initialized")
+    except Exception as exc:
+        logger.warning("Knowledge system init failed: %s", exc)
 
     # Cloud-native startup sequence v2 — autonomous orchestration
     _start_api_gateway()
