@@ -1,7 +1,10 @@
 # Environment & Secrets
 .env
-.env.*
-# .env.example intentionally tracked as template
+.env.production
+.env.development
+.env.local
+.env.staging
+# .env.example, .env.gmail intentionally tracked as templates
 config.json
 agent_config.json
 *.key

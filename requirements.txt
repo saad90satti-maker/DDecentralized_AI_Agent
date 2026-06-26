@@ -1,11 +1,11 @@
 # Ghost Media Engine - Dependencies
 # Core
-fastapi==0.104.1
+fastapi>=0.109.1
 uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
 
 # HTTP
-requests==2.31.0
+requests>=2.32.0
 aiohttp==3.9.1
 httpx>=0.25.0
 
@@ -24,7 +24,7 @@ accelerate>=0.27.0
 discord.py==2.3.2
 
 # Security
-cryptography==41.0.7
+cryptography>=44.0.0
 slowapi==0.1.9
 
 # Deployment

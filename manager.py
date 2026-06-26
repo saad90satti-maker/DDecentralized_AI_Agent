@@ -131,7 +131,7 @@ _api_gateway = UnifiedAPIGateway(GatewayConfig(
 _tool_registry = get_registry()
 _cloudflare_tunnel = CloudflareTunnel(_cloud_config)
 _shared_knowledge = SharedKnowledge(node_id=f"ghost-mgr-{os.getpid()}")
-_swarm_security = SwarmSecurityAudit(secret_key=os.getenv("SWARM_SECRET", "default-swarm-secret-change-me"))
+_swarm_security = SwarmSecurityAudit(secret_key=os.getenv("SWARM_SECRET", ""))
 _performance_analyzer = PerformanceAnalyzer(rate_threshold=0.4)
 _heartbeat = HeartbeatSignal(_cloud_config, _cloudflare_tunnel, interval=60.0, shared_knowledge=_shared_knowledge)
 _health_engine = HealthEngine(
