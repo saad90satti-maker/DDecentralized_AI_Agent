@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  kernel:
+    build: .
+    ports:
+      - "8470:8470"
+      - "8471:8471"
+    environment:
+      - DAIOS_TICK_INTERVAL=2.0
+      - DAIOS_MAX_AGENTS=20
+      - DAIOS_KERNEL_PORT=8470
+      - DAIOS_DASHBOARD_PORT=8471
+      - DAIOS_LOG_LEVEL=INFO
+      - DAIOS_CLOUDFLARE=${DAIOS_CLOUDFLARE:-false}
+    volumes:
+      - daios_data:/app/daios/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+volumes:
+  daios_data:

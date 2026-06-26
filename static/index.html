@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ghost Engine — Command Center</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="topology-bg"></div>
+<div class="app-container">
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">👻</div>
+      <div class="logo-text">
+        <span class="logo-title">GHOST ENGINE</span>
+        <span class="logo-sub">v3.0.0 · DECENTRALIZED</span>
+      </div>
+    </div>
+    <nav class="nav-menu">
+      <a href="#" class="nav-item active" data-view="overview"><span class="nav-icon">◈</span> Overview</a>
+      <a href="#" class="nav-item" data-view="terminal"><span class="nav-icon">▸</span> Terminal</a>
+      <a href="#" class="nav-item" data-view="tasks"><span class="nav-icon">☰</span> Task Queue</a>
+      <a href="#" class="nav-item" data-view="network"><span class="nav-icon">✦</span> Network</a>
+      <a href="#" class="nav-item" data-view="deploy"><span class="nav-icon">▲</span> Deployment</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="status-dot" id="connection-dot"></div>
+      <span id="connection-status">CONNECTED</span>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="page-title" id="page-title">Command Center</h1>
+        <span class="page-subtitle" id="page-subtitle">System Overview</span>
+      </div>
+      <div class="topbar-right">
+        <div class="metric-chip">
+          <span class="chip-label">Uptime</span>
+          <span class="chip-value" id="uptime">--</span>
+        </div>
+        <div class="metric-chip">
+          <span class="chip-label">Workers</span>
+          <span class="chip-value" id="workers">0</span>
+        </div>
+        <div class="metric-chip">
+          <span class="chip-label">Tasks</span>
+          <span class="chip-value" id="task-count">0</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== OVERVIEW VIEW ===== -->
+    <section class="view active" id="view-overview">
+      <div class="grid-4">
+        <div class="glass-card metric-card">
+          <div class="metric-header">Services Online</div>
+          <div class="metric-value" id="metric-services">0</div>
+          <div class="metric-bar"><div class="metric-fill" id="metric-services-bar" style="width:0%"></div></div>
+        </div>
+        <div class="glass-card metric-card">
+          <div class="metric-header">Pending Tasks</div>
+          <div class="metric-value" id="metric-pending">0</div>
+          <div class="metric-bar"><div class="metric-fill fill-orange" id="metric-pending-bar" style="width:0%"></div></div>
+        </div>
+        <div class="glass-card metric-card">
+          <div class="metric-header">Swarm Peers</div>
+          <div class="metric-value" id="metric-peers">0</div>
+          <div class="metric-bar"><div class="metric-fill fill-cyan" id="metric-peers-bar" style="width:0%"></div></div>
+        </div>
+        <div class="glass-card metric-card">
+          <div class="metric-header">Success Rate</div>
+          <div class="metric-value" id="metric-success">--%</div>
+          <div class="metric-bar"><div class="metric-fill fill-green" id="metric-success-bar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="glass-card">
+          <div class="card-header">
+            <span>Service Status</span>
+            <span class="badge live">LIVE</span>
+          </div>
+          <div class="service-grid" id="service-grid"></div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header">
+            <span>Recent Activity</span>
+            <span class="badge" id="activity-count">0 events</span>
+          </div>
+          <div class="activity-feed" id="activity-feed">
+            <div class="activity-empty">No recent activity</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="glass-card">
+          <div class="card-header"><span>Task Throughput</span></div>
+          <div class="chart-container"><canvas id="chart-throughput"></canvas></div>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span>Service Latency</span></div>
+          <div class="chart-container"><canvas id="chart-latency"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== TERMINAL VIEW ===== -->
+    <section class="view" id="view-terminal">
+      <div class="glass-card terminal-card">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+          </div>
+          <span class="terminal-title">ghost@engine:~$</span>
+          <div class="terminal-actions">
+            <button class="term-btn" onclick="clearTerminal()">Clear</button>
+            <button class="term-btn" onclick="copyTerminal()">Copy</button>
+          </div>
+        </div>
+        <div class="terminal-body" id="terminal-body">
+          <div class="term-line"><span class="term-prompt">ghost@engine:~$</span> <span class="term-cmd">system boot sequence initiated</span></div>
+          <div class="term-line term-output">[OK] Core modules loaded</div>
+          <div class="term-line term-output">[OK] Service connectors initialized</div>
+          <div class="term-line term-output">[OK] Autonomous agent ready</div>
+        </div>
+        <div class="terminal-input-line">
+          <span class="term-prompt">ghost@engine:~$</span>
+          <input type="text" class="terminal-input" id="terminal-input" placeholder="Enter command..." autofocus>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== TASKS VIEW ===== -->
+    <section class="view" id="view-tasks">
+      <div class="grid-2">
+        <div class="glass-card">
+          <div class="card-header"><span>Queue Task</span></div>
+          <form id="task-form" class="inline-form">
+            <input type="text" id="task-command" placeholder="Enter command to queue..." class="form-input">
+            <button type="submit" class="btn-primary">Queue</button>
+          </form>
+          <pre id="taskResult" class="output-block">Ready</pre>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span>Execute Command</span></div>
+          <form id="command-form" class="inline-form">
+            <input type="text" id="command" placeholder="Enter shell command..." class="form-input">
+            <button type="submit" class="btn-primary">Execute</button>
+          </form>
+          <pre id="commandResult" class="output-block">Ready</pre>
+        </div>
+      </div>
+      <div class="glass-card">
+        <div class="card-header"><span>Task Queue</span></div>
+        <div class="table-wrap">
+          <table class="data-table" id="task-table">
+            <thead><tr><th>ID</th><th>Command</th><th>Status</th><th>Age</th></tr></thead>
+            <tbody id="task-tbody"><tr><td colspan="4" class="empty-cell">No tasks</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== NETWORK VIEW ===== -->
+    <section class="view" id="view-network">
+      <div class="grid-2">
+        <div class="glass-card">
+          <div class="card-header"><span>Swarm Nodes</span></div>
+          <pre id="swarm-status" class="output-block">Loading...</pre>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span>Propagation Engine</span></div>
+          <pre id="propagate-status" class="output-block">Loading...</pre>
+        </div>
+      </div>
+      <div class="glass-card">
+        <div class="card-header"><span>Peers</span></div>
+        <pre id="peers-list" class="output-block">Loading...</pre>
+      </div>
+    </section>
+
+    <!-- ===== DEPLOYMENT VIEW ===== -->
+    <section class="view" id="view-deploy">
+      <div class="grid-2">
+        <div class="glass-card">
+          <div class="card-header"><span>Deployment</span></div>
+          <button onclick="prepareDeployment()" class="btn-primary btn-glow">Prepare Deployment</button>
+          <pre id="deployResult" class="output-block" style="margin-top:16px">Ready</pre>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span>Port Check</span></div>
+          <div class="inline-form">
+            <input type="number" id="port-check-input" value="8000" class="form-input" placeholder="Port number" min="1" max="65535" style="width:120px">
+            <button onclick="checkPort()" class="btn-primary" style="background:linear-gradient(135deg,#6366f1,#4f46e5)">Check Port</button>
+          </div>
+          <pre id="port-check-result" class="output-block" style="margin-top:16px">Enter a port and click check</pre>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:16px">
+        <div class="glass-card">
+          <div class="card-header"><span>Trigger Ignition</span></div>
+          <button onclick="triggerIgnition()" class="btn-primary btn-glow" style="background:linear-gradient(135deg,#f59e0b,#d97706)">Trigger Ignition Cycle</button>
+          <pre id="ignitionResult" class="output-block" style="margin-top:16px">Ready</pre>
+        </div>
+        <div class="glass-card">
+          <div class="card-header"><span>Infrastructure Infiltration</span></div>
+          <button onclick="runInfiltration()" class="btn-primary btn-glow" style="background:linear-gradient(135deg,#ef4444,#dc2626)">Run Infiltration</button>
+          <pre id="infiltrateResult" class="output-block" style="margin-top:16px">Ready</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

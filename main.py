@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from logging_system import setup_logging, get_logger
+import security_config
 
 _BASE_DIR = Path(__file__).resolve().parent
 
@@ -418,6 +419,7 @@ class Orchestrator:
         )
         logger.info("Logging initialized — level=%s, file=%s",
                      log_cfg.get("level", "INFO"), log_cfg.get("file", "system_log.txt"))
+        security_config.log_safe_startup()
 
     async def _init_modules(self) -> None:
         logger.info("-" * 60)

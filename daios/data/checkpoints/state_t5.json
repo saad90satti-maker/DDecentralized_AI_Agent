@@ -1,0 +1,84 @@
+{
+  "state": {
+    "tick": 5,
+    "start_time": 1782195212.5579367,
+    "active_agents": 6,
+    "total_agents_created": 6,
+    "total_tasks_completed": 0,
+    "total_discoveries": 2,
+    "total_messages_sent": 5,
+    "kernel_status": "running",
+    "phase": "operational",
+    "errors": [],
+    "warnings": []
+  },
+  "agents": {
+    "research-01": {
+      "id": "research-01",
+      "type": "research",
+      "status": "idle",
+      "created_tick": 0,
+      "last_active_tick": 0,
+      "tasks_completed": 0,
+      "energy": 100.0,
+      "observations_count": 0,
+      "discoveries_count": 0
+    },
+    "planner-01": {
+      "id": "planner-01",
+      "type": "planner",
+      "status": "idle",
+      "created_tick": 0,
+      "last_active_tick": 0,
+      "tasks_completed": 0,
+      "energy": 100.0,
+      "observations_count": 0,
+      "discoveries_count": 0
+    },
+    "builder-01": {
+      "id": "builder-01",
+      "type": "builder",
+      "status": "idle",
+      "created_tick": 0,
+      "last_active_tick": 0,
+      "tasks_completed": 0,
+      "energy": 100.0,
+      "observations_count": 0,
+      "discoveries_count": 0
+    },
+    "auditor-01": {
+      "id": "auditor-01",
+      "type": "auditor",
+      "status": "idle",
+      "created_tick": 0,
+      "last_active_tick": 0,
+      "tasks_completed": 0,
+      "energy": 100.0,
+      "observations_count": 0,
+      "discoveries_count": 0
+    },
+    "memory-01": {
+      "id": "memory-01",
+      "type": "memory",
+      "status": "idle",
+      "created_tick": 0,
+      "last_active_tick": 0,
+      "tasks_completed": 0,
+      "energy": 100.0,
+      "observations_count": 0,
+      "discoveries_count": 0
+    },
+    "comm-01": {
+      "id": "comm-01",
+      "type": "communication",
+      "status": "idle",
+      "created_tick": 0,
+      "last_active_tick": 0,
+      "tasks_completed": 0,
+      "energy": 100.0,
+      "observations_count": 0,
+      "discoveries_count": 0
+    }
+  },
+  "resources": {}
+}

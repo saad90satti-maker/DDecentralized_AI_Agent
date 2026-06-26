@@ -1,7 +1,7 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "opencode-zen/deepseek-v4-flash-free",
-  "small_model": "opencode-zen/deepseek-v4-flash-free",
+  "model": "opencode-zen/qwen3.7-max",
+  "small_model": "opencode-zen/qwen3.7-max",
   "provider": {
     "opencode-zen": {
       "npm": "@ai-sdk/openai-compatible",
@@ -12,14 +12,15 @@
       "models": {
         "deepseek-v4-flash-free": {
           "name": "DeepSeek V4 Flash Free",
-          "limit": {
-            "context": 200000,
-            "output": 128000
-          },
-          "cost": {
-            "input": 0.0,
-            "output": 0.0
-          },
+          "limit": { "context": 200000, "output": 128000 },
+          "cost": { "input": 0.0, "output": 0.0 },
+          "tool_call": true,
+          "reasoning": true
+        },
+        "qwen3.7-max": {
+          "name": "Qwen3.7 Max",
+          "limit": { "context": 200000, "output": 128000 },
+          "cost": { "input": 0.0, "output": 0.0 },
           "tool_call": true,
           "reasoning": true
         }
@@ -28,10 +29,14 @@
   },
   "agent": {
     "hermes": {
-      "description": "Hermes AI agent connected to the Decentralized AI Agent project. Use for project management, email automation, browser tasks, and system orchestration.",
-      "model": "opencode-zen/deepseek-v4-flash-free",
-      "mode": "subagent",
-      "prompt": "You are Hermes, the core AI agent for a Decentralized AI Agent project. You have access to:\n- Gmail automation (EmailResponder)\n- Browser automation (BrowserAgent/Playwright)\n- Task queue and execution engine\n- FastAPI dashboard at localhost:8000\n- Discord notifications\n- GitHub/Groq/Cloudflare integrations\n\nYour capabilities:\n- Analyze and reply to emails autonomously\n- Execute shell commands and browser actions\n- Orchestrate tasks via the task queue\n- Monitor and report system status\n- Scale parallel workers for performance\n\nWhen asked, use the available API endpoints (localhost:8000) to interact with the system."
+      "description": "Hermes AI agent — project management, Gmail automation, browser tasks, system orchestration.",
+      "model": "opencode-zen/qwen3.7-max",
+      "mode": "subagent"
+    },
+    "ghost-prime": {
+      "description": "Ghost-Prime — core intelligence engine. Autonomous execution, swarm orchestration, recursive self-optimization.",
+      "model": "opencode-zen/qwen3.7-max",
+      "mode": "subagent"
     }
   },
   "disabled_providers": ["anthropic", "openai", "google"],

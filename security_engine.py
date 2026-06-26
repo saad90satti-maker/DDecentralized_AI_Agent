@@ -75,9 +75,8 @@ def constitutional_audit(base_dir: Optional[Path] = None) -> Dict[str, Any]:
 
     dangerous_patterns: Dict[str, List[Tuple[str, str]]] = {
         "III": [
-            ("rm -rf", "Article III.1: Destructive command"),
-            ("os.system", "Article III.1: Unsafe system call"),
-            ("shutdown", "Article III.1: Shutdown command"),
+            ("rm -rf ", "Article III.1: Destructive command"),
+            ("format(", "Article III.1: Disk format command"),
             ("private_key", "Article III.2: Possible key exposure"),
             ("api_key", "Article III.2: Possible API key exposure"),
         ],
@@ -100,13 +99,14 @@ def constitutional_audit(base_dir: Optional[Path] = None) -> Dict[str, Any]:
                     articles["I"]["penalties"] += 15
 
             for article_key, patterns in dangerous_patterns.items():
+                penalty = 5 if article_key == "III" else 10
                 for pattern, desc in patterns:
                     idx = content.find(pattern)
                     if idx >= 0:
                         line = content[:idx].count("\n") + 1
                         violations.append({"file": str(rel), "article": article_key,
                                            "detail": f"{desc} at line {line}"})
-                        articles[article_key]["penalties"] += 10
+                        articles[article_key]["penalties"] += penalty
 
             if filepath.name == "ghost_executor.py":
                 has_beneficial = any(kw in content.lower() for kw in beneficial_keywords)

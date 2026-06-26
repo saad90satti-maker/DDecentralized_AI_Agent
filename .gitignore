@@ -93,5 +93,19 @@ main_pid.txt
 agent_actions.log
 learning_log.py
 
+# Security reports (generated, not committed)
+security_report_*.md
+
+# Arweave wallet key
+arweave-key.json
+
+# Hermes agent data
+hermes_agent_data/
+
+# Generated reports & articles
+articles/
+reports/
+screenshots/
+
 # Test artifacts
 .cache/

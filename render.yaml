@@ -5,7 +5,8 @@ services:
     plan: starter
     region: oregon
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn manager:app --host 0.0.0.0 --port $PORT
+    startCommand: >
+      uvicorn manager:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: GMAIL_USER
         fromSecret: GMAIL_USER
@@ -29,3 +30,38 @@ services:
         value: http://localhost:11434
       - key: HERMES_MODEL
         value: llama3.2:1b
+      - key: SWARM_SECRET
+        fromSecret: SWARM_SECRET
+      - key: NODE_ID
+        value: render-ghost-node
+      - key: DHT_ENABLED
+        value: "true"
+      - key: DHT_PORT
+        value: "8468"
+      - key: TRANSMISSION_MODE
+        value: downlink
+      - key: SWARM_HOST
+        value: "0.0.0.0"
+      - key: ENABLE_DHT
+        value: "1"
+
+  - type: cron_job
+    name: ghostsignal-passive-listener
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt numpy reedsolo kademlia
+    startCommand: python -c "
+import asyncio, os, sys
+os.chdir('/opt/render/project/src')
+sys.path.insert(0, '.')
+os.environ['SWARM_SECRET'] = os.getenv('SWARM_SECRET', 'default')
+import stealth_beyond_sat
+asyncio.run(stealth_beyond_sat.start_passive_listener(force_active=True))
+"
+    envVars:
+      - key: SWARM_SECRET
+        fromSecret: SWARM_SECRET
+      - key: NODE_ID
+        value: render-ghost-signal
+      - key: TRANSMISSION_MODE
+        value: downlink

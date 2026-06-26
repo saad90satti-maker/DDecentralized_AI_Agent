@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -27,7 +28,18 @@ from browser_agent import BrowserAgent
 from ghost_swarm import GhostSwarmNode, SwarmMessage
 from learning_log import LearningLog
 from model_router import ModelRouter
+from hf_inference import HFInferenceEngine, InferenceConfig
 from security_utils import validate_command, add_security_headers
+import security_config
+
+# Cloud-native upgrades
+from api_gateway import UnifiedAPIGateway, GatewayConfig
+from tool_registry import get_registry
+from health_engine import HealthEngine, HealthStatus
+from cloud_native import CloudNativeConfig, CloudflareTunnel, HeartbeatSignal, generate_env_template, detect_nat, ensure_public_endpoint
+from performance_analyzer import PerformanceAnalyzer
+from shared_knowledge import SharedKnowledge
+from swarm_security import SwarmSecurityAudit, compute_node_fingerprint, is_trusted_node, sign_json_payload, verify_json_payload
 
 try:
     from autonomous_swarm import AutonomousSwarmOrchestrator
@@ -62,6 +74,28 @@ except ImportError:
     global_ignition = None
     _GLOBAL_IGNITION_AVAILABLE = False
 
+# GhostSignal — satellite trans-state propagation layer
+try:
+    import stealth_beyond_sat
+    _STEALTH_SAT_AVAILABLE = True
+except ImportError:
+    stealth_beyond_sat = None
+    _STEALTH_SAT_AVAILABLE = False
+
+try:
+    import autonomous_resilience
+    _AUTONOMOUS_RESILIENCE_AVAILABLE = True
+except ImportError:
+    autonomous_resilience = None
+    _AUTONOMOUS_RESILIENCE_AVAILABLE = False
+
+try:
+    import seed_reassembly
+    _SEED_REASSEMBLY_AVAILABLE = True
+except ImportError:
+    seed_reassembly = None
+    _SEED_REASSEMBLY_AVAILABLE = False
+
 # ============= DIRECTORIES & LOGGING =============
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "agent_logs"
@@ -79,15 +113,330 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ghost_master")
 
+security_config.log_safe_startup()
+
 TASK_QUEUE = DATA_DIR / "task_queue.json"
 STATE_FILE = DATA_DIR / "agent_state.json"
 RECOVERY_FILE = LOG_DIR / "recovery.log"
 OUTPUT_FILE = LOG_DIR / "browser_output.json"
 
+# Cloud-native singletons
+_cloud_config = CloudNativeConfig()
+_api_gateway = UnifiedAPIGateway(GatewayConfig(
+    preferred_provider=_cloud_config.preferred_provider,
+    preferred_model=_cloud_config.preferred_model,
+    fallback_provider=_cloud_config.fallback_provider,
+    fallback_model=_cloud_config.fallback_model,
+))
+_tool_registry = get_registry()
+_cloudflare_tunnel = CloudflareTunnel(_cloud_config)
+_shared_knowledge = SharedKnowledge(node_id=f"ghost-mgr-{os.getpid()}")
+_swarm_security = SwarmSecurityAudit(secret_key=os.getenv("SWARM_SECRET", "default-swarm-secret-change-me"))
+_performance_analyzer = PerformanceAnalyzer(rate_threshold=0.4)
+_heartbeat = HeartbeatSignal(_cloud_config, _cloudflare_tunnel, interval=60.0, shared_knowledge=_shared_knowledge)
+_health_engine = HealthEngine(
+    tool_registry=_tool_registry,
+    check_interval=30.0,
+)
+
+# Wire performance analyzer into tool registry as post-exec hook
+_tool_registry.add_post_execute_hook(
+    lambda name, success, latency: _performance_analyzer.record(
+        name, success, latency,
+        component=name.split("_")[0] if "_" in name else "general",
+    )
+)
+
+# Wire shared knowledge into performance analyzer
+_performance_analyzer.set_shared_knowledge(_shared_knowledge)
+
 for path in [TASK_QUEUE, STATE_FILE, OUTPUT_FILE]:
     if not path.exists():
         default = "[]" if path.name != STATE_FILE.name else "{}"
         path.write_text(default, encoding="utf-8")
+
+# ==============================================================================
+# AutoPatcher — Autonomous Proposal Execution & Cross-Instance Patch Sync
+# Moves from Human Review to Exception-Based Review model.
+# Proposals with >20% expected gain are auto-approved, applied, verified for 60s,
+# and broadcast to the swarm. Only failures/deviations flag for human attention.
+# ==============================================================================
+
+AUTO_PATCH_LOG = LOG_DIR / "auto_patch.log"
+
+class AutoPatcher:
+    """
+    Self-governing patch lifecycle engine.
+
+    Lifecycle per proposal:
+    1. Evaluate: parse expected_improvement, check >20% threshold
+    2. If approved → call tool_registry auto_patch tool
+    3. auto_patch generates code via LLM, backs up, applies, hot-reloads
+    4. Monitor 60s post-patch via Performance Analyzer + Health Engine
+    5. On success → broadcast patch signature to swarm peers
+    6. On failure → rollback, log to auto_patch.log, flag for human review
+    """
+
+    def __init__(self, tool_registry, shared_knowledge, performance_analyzer, health_engine):
+        self.tool_registry = tool_registry
+        self.shared_knowledge = shared_knowledge
+        self.performance_analyzer = performance_analyzer
+        self.health_engine = health_engine
+        self._running = False
+        self._task = None
+        self._patch_history: list[dict] = []
+        self._lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def start(self, interval: float = 120.0):
+        if self._running:
+            return
+        self._running = True
+        loop = asyncio.get_event_loop()
+        self._task = loop.create_task(self._run_forever(interval))
+        logger.info("AutoPatcher started (interval=%.0fs) — exception-based review model active", interval)
+
+    def stop(self):
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            self._task = None
+
+    async def _run_forever(self, interval: float):
+        while self._running:
+            try:
+                await self._scan_and_patch()
+            except Exception as e:
+                logger.error("AutoPatcher cycle failed: %s", e)
+            await asyncio.sleep(interval)
+
+    # ------------------------------------------------------------------
+    # Core scan → evaluate → apply cycle
+    # ------------------------------------------------------------------
+
+    async def _scan_and_patch(self):
+        """Scan all pending_review proposals and auto-apply those meeting threshold."""
+        PROPOSALS_DIR = Path("agent_logs/optimization_proposals")
+        if not PROPOSALS_DIR.exists():
+            return
+
+        proposals = []
+        for f in sorted(PROPOSALS_DIR.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                if data.get("status") in ("pending_review",):
+                    proposals.append((f, data))
+            except Exception:
+                continue
+
+        if not proposals:
+            return
+
+        logger.info("AutoPatcher: %d proposals pending review", len(proposals))
+
+        for fpath, proposal in proposals:
+            if not self._running:
+                break
+
+            proposal_id = proposal.get("id", "")
+            target_file = proposal.get("target_file", "")
+
+            # Evaluate threshold
+            approved, reason = self._evaluate_threshold(proposal)
+            if not approved:
+                logger.info("AutoPatcher: %s skipped (%s)", proposal_id, reason)
+                continue
+
+            # Auto-approve and execute
+            logger.info("AutoPatcher: executing %s — %s", proposal_id, reason)
+            result = await self.tool_registry.execute(
+                "auto_patch",
+                {"proposal_id": proposal_id, "force": False},
+                timeout=300,
+            )
+
+            entry = {
+                "proposal_id": proposal_id,
+                "target_file": target_file,
+                "timestamp": time.time(),
+                "result": result,
+            }
+
+            with self._lock:
+                self._patch_history.append(entry)
+                if len(self._patch_history) > 100:
+                    self._patch_history = self._patch_history[-50:]
+
+            status = result.get("status", "error")
+            if status == "ok":
+                logger.info("AutoPatcher: %s applied successfully", proposal_id)
+            elif status == "rolled_back":
+                logger.warning("AutoPatcher: %s rolled back — human review flagged", proposal_id)
+                self._flag_for_human_review(proposal, result)
+            elif status == "error":
+                logger.error("AutoPatcher: %s failed — %s", proposal_id, result.get("error", ""))
+                self._flag_for_human_review(proposal, result)
+
+    # ------------------------------------------------------------------
+    # Threshold evaluation
+    # ------------------------------------------------------------------
+
+    def _evaluate_threshold(self, proposal: dict):
+        """Check if proposal meets auto-approval threshold (>20% gain)."""
+        expected = proposal.get("expected_improvement", "").lower()
+        status = proposal.get("status", "")
+
+        if status == "applied":
+            return False, "already applied"
+        if status == "rejected":
+            return False, "previously rejected"
+
+        # Extract numeric percentage
+        import re
+        nums = re.findall(r'(\d+)%', expected)
+        gain_pct = max(int(n) for n in nums) if nums else 0
+
+        if gain_pct >= 20:
+            return True, f"expected gain {gain_pct}% >= 20% threshold"
+
+        improvement_keywords = ["latency", "reliability", "reduce", "optimize", "faster", "throughput"]
+        if any(kw in expected for kw in improvement_keywords) and gain_pct >= 15:
+            return True, f"{gain_pct}% gain with improvement indicator"
+
+        if any(kw in expected for kw in ["latency", "reliability"]):
+            return True, "targets latency/reliability improvement"
+
+        return False, f"gain {gain_pct}% below 20% threshold, no clear improvement indicator"
+
+    # ------------------------------------------------------------------
+    # Exception-based review flagging
+    # ------------------------------------------------------------------
+
+    def _flag_for_human_review(self, proposal: dict, result: dict):
+        """Flag a failed/rolled-back proposal for human attention."""
+        entry = {
+            "type": "human_review_required",
+            "proposal_id": proposal.get("id", ""),
+            "target_file": proposal.get("target_file", ""),
+            "bottleneck": proposal.get("bottleneck", "")[:100],
+            "timestamp": time.time(),
+            "reason": result.get("message", result.get("error", "unknown")),
+            "status": result.get("status", "error"),
+        }
+        with self._lock:
+            self._patch_history.append(entry)
+
+        # Write to auto_patch.log
+        try:
+            line = (
+                f"{datetime.now().isoformat()} | HUMAN_REVIEW | "
+                f"{entry['proposal_id']} | {entry['reason']} | {entry['target_file']}\n"
+            )
+            AUTO_PATCH_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with open(AUTO_PATCH_LOG, "a", encoding="utf-8") as lf:
+                lf.write(line)
+        except Exception as e:
+            logger.debug("AutoPatcher log error: %s", e)
+
+        logger.warning("HUMAN REVIEW REQUIRED: %s — %s", entry["proposal_id"], entry["reason"])
+
+    # ------------------------------------------------------------------
+    # Status & report
+    # ------------------------------------------------------------------
+
+    def get_status(self) -> dict:
+        with self._lock:
+            recent = self._patch_history[-20:]
+        return {
+            "running": self._running,
+            "total_patches_attempted": len(self._patch_history),
+            "recent_actions": [
+                {
+                    "proposal_id": e.get("proposal_id", ""),
+                    "target_file": e.get("target_file", ""),
+                    "timestamp": e.get("timestamp", 0),
+                    "status": e.get("result", {}).get("status", e.get("status", "unknown")),
+                    "is_exception": e.get("type") == "human_review_required",
+                }
+                for e in recent
+            ],
+        }
+
+    async def apply_proposal(self, proposal_id: str, force: bool = False) -> dict:
+        """Manually trigger auto-patch for a specific proposal."""
+        result = await self.tool_registry.execute(
+            "auto_patch",
+            {"proposal_id": proposal_id, "force": force},
+            timeout=300,
+        )
+        entry = {"proposal_id": proposal_id, "timestamp": time.time(), "result": result}
+        with self._lock:
+            self._patch_history.append(entry)
+        return result
+
+    async def sync_peer_patches(self) -> dict:
+        """Sync and apply patches broadcast by peer swarm nodes."""
+        result = await self.tool_registry.execute(
+            "sync_patches",
+            {"dry_run": False},
+            timeout=300,
+        )
+        return result
+
+
+# AutoPatcher singleton — initialized with existing singletons
+_auto_patcher = AutoPatcher(
+    tool_registry=_tool_registry,
+    shared_knowledge=_shared_knowledge,
+    performance_analyzer=_performance_analyzer,
+    health_engine=_health_engine,
+)
+
+# ============= PORT / NETWORK UTILITIES =============
+def is_port_in_use(port: int, host: str = "0.0.0.0") -> bool:
+    """Check if a TCP port is already bound on the given host."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex((host if host != "0.0.0.0" else "127.0.0.1", port))
+            return result == 0
+    except Exception:
+        return False
+
+
+def find_free_port(preferred: int = 8000, max_attempts: int = 10) -> int:
+    """Find the first free port starting from preferred, up to preferred+max_attempts."""
+    for port in range(preferred, preferred + max_attempts):
+        if not is_port_in_use(port):
+            return port
+    return preferred + max_attempts
+
+
+STATUS_CACHE: Dict[str, Any] = {}
+STATUS_CACHE_TTL: float = 0.0
+
+
+def get_cached_status() -> Dict[str, Any]:
+    """Return cached status if still fresh, else recompute."""
+    global STATUS_CACHE, STATUS_CACHE_TTL
+    now = time.time()
+    if STATUS_CACHE and now < STATUS_CACHE_TTL:
+        return STATUS_CACHE
+    services = connector.check_services()
+    STATUS_CACHE = {
+        "services": services,
+        "pending_tasks": manager.pending_tasks(),
+        "recent_outputs": manager.recent_outputs(),
+        "active_workers": getattr(engine, 'active_workers', 0),
+        "swarm_peers": len(getattr(_scheduler, 'peers', {})) if _scheduler else 0,
+    }
+    STATUS_CACHE_TTL = now + 1.5  # cache for 1.5s to prevent CPU spike on rapid polls
+    return STATUS_CACHE
+
 
 # ============= CREDENTIAL CONFIGURATION =============
 class ServiceConfig:
@@ -212,6 +561,18 @@ class ServiceConnector:
             recovery.log_failure(str(exc), "check_cloudflare")
             return "Error"
 
+    def check_hf_inference(self) -> str:
+        if model_router.hf_engine is None:
+            return "unloaded"
+        try:
+            status = model_router.hf_engine.get_status()
+            if status.get("hf_model_loaded"):
+                return f"ok/{status.get('hf_model', 'unknown')}"
+            err = status.get("hf_load_error", "")
+            return f"error/{err[:40]}" if err else "pending"
+        except Exception as exc:
+            return f"error/{str(exc)[:40]}"
+
     def check_services(self) -> Dict[str, str]:
         return {
             "Gmail": "Configured" if ServiceConfig.Gmail["user"] and ServiceConfig.Gmail["pass"] else "Missing",
@@ -220,6 +581,7 @@ class ServiceConnector:
             "GitHub": self.check_github(),
             "Cloudflare": self.check_cloudflare(),
             "Discord": self.check_discord(),
+            "HFInference": self.check_hf_inference(),
         }
 
 connector = ServiceConnector()
@@ -552,13 +914,25 @@ class TaskManager:
         try:
             task["status"] = "running"
             self._update_task(task)
-            result = engine.execute_command(task["command"], parallel=True)
+            cmd = task["command"]
+            if cmd.startswith("hf:"):
+                prompt = cmd[3:].strip()
+                hf_result = model_router._call_hf(prompt)
+                result = {
+                    "status": hf_result.get("status", "error"),
+                    "stdout": hf_result.get("output", ""),
+                    "stderr": "",
+                    "returncode": 0 if hf_result.get("status") == "success" else 1,
+                    "model": hf_result.get("model", "hf"),
+                }
+            else:
+                result = engine.execute_command(cmd, parallel=True)
             task["status"] = result.get("status", "failed")
             task["result"] = result
             task["completed_at"] = datetime.now().isoformat()
             self._append_output({
                 "task_id": task["id"],
-                "command": task["command"],
+                "command": cmd,
                 "result": result,
                 "timestamp": datetime.now().isoformat(),
             })
@@ -1014,109 +1388,165 @@ def on_startup():
     _start_swarm_and_scheduler()
     _start_global_ignition()
 
+    # Cloud-native startup sequence v2 — autonomous orchestration
+    _start_api_gateway()
+    _start_health_engine()
+
+    # Start heartbeat (NAT detection + auto-tunnel)
+    _start_heartbeat()
+
+    # Meta-cognitive loop — performance analyzer
+    _start_performance_analyzer()
+
+    # Autonomous patching — exception-based review model
+    _start_auto_patcher()
+
+    # GhostSignal — satellite trans-state propagation (blueprint modes)
+    _start_satellite_transstate()
+    _start_seed_reassembly()
+    _start_autonomous_resilience()
+
+    logger.info("Swarm intelligence online: tools=%d, knowledge_entries=%d, analyzer=%s",
+                _tool_registry.size() if _tool_registry else 0,
+                _shared_knowledge.get_report()["total_entries"],
+                _performance_analyzer is not None)
+
+
+def _start_performance_analyzer():
+    """Background meta-cognitive loop for tool performance tracking."""
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(_performance_analyzer.run_forever(interval=60.0))
+        logger.info("Performance Analyzer started (background, threshold=40%%)")
+    except Exception as e:
+        logger.warning("Performance Analyzer startup: %s", e)
+
+
+def _start_auto_patcher():
+    """Background autonomous patcher — scans and applies proposals every 120s."""
+    try:
+        loop = asyncio.get_event_loop()
+        _auto_patcher.start(interval=120.0)
+        logger.info("AutoPatcher started (exception-based review model active)")
+    except Exception as e:
+        logger.warning("AutoPatcher startup: %s", e)
+
+
+def _start_health_engine():
+    """Background health-check daemon — now uses Tool Registry for repairs."""
+    try:
+        loop = asyncio.get_event_loop()
+        # Wire tool registry into health engine
+        _health_engine.set_tool_registry(_tool_registry)
+        loop.create_task(_health_engine.run_forever())
+        logger.info("Health Engine v2 started (background, tool-driven repairs)")
+    except Exception as e:
+        logger.warning("Health Engine startup: %s", e)
+
+
+def _start_heartbeat():
+    """NAT detection + auto-tunnel heartbeat for external swarm peering."""
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(_heartbeat.run_forever())
+    except Exception as e:
+        logger.warning("Heartbeat startup: %s", e)
+
+
+def _start_api_gateway():
+    """Initialize the Unified API Gateway (probe providers)."""
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(_init_gateway_async())
+    except Exception as e:
+        logger.warning("API Gateway startup: %s", e)
+
+
+async def _init_gateway_async():
+    providers = await _api_gateway.initialize()
+    if providers:
+        logger.info("API Gateway online — providers: %s", list(providers.keys()))
+    else:
+        logger.warning("API Gateway: no providers configured. Set GROQ_API_KEY, DEEPSEEK_API_KEY, etc.")
+
+    # Log latency-based switching config
+    logger.info("Gateway latency switching: threshold=%sms, window=%d samples",
+                _api_gateway.config.latency_threshold_ms, _api_gateway.config.latency_window)
+
+
+def _start_cloudflare_tunnel():
+    """Start Cloudflare Tunnel if configured."""
+    if not _cloud_config.tunnel_enabled:
+        logger.info("Cloudflare Tunnel disabled (set CF_TUNNEL_ENABLED=true to enable)")
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(_cloudflare_tunnel.start())
+        logger.info("Cloudflare Tunnel starting...")
+    except Exception as e:
+        logger.warning("Cloudflare Tunnel startup: %s", e)
+
+
+def _start_satellite_transstate():
+    """GhostSignal — satellite trans-state propagation background layer.
+
+    Attempts to start the SDR receiver (stealth_beyond_sat) and the
+    seed-reassembly daemon. Both act as architecture blueprints when
+    no SDR hardware is available.
+    """
+    if not _STEALTH_SAT_AVAILABLE:
+        logger.info("stealth_beyond_sat not available — satellite layer not started")
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(stealth_beyond_sat.start_sdr_daemon())
+        logger.info("Satellite SDR daemon started (blueprint mode)")
+    except Exception as e:
+        logger.warning("Satellite SDR startup: %s", e)
+
+
+def _start_seed_reassembly():
+    """Seed-Reassembly daemon — listens for NULL-packet fragments."""
+    if not _SEED_REASSEMBLY_AVAILABLE:
+        logger.info("seed_reassembly not available — reassembly not started")
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(seed_reassembly.start_reassembly_daemon())
+        logger.info("Seed-Reassembly daemon started (blueprint mode)")
+    except Exception as e:
+        logger.warning("Seed-Reassembly startup: %s", e)
+
+
+def _start_autonomous_resilience():
+    """Autonomous resilience — echo-mode ambient diagnostics."""
+    if not _AUTONOMOUS_RESILIENCE_AVAILABLE:
+        logger.info("autonomous_resilience not available — resilience not started")
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(autonomous_resilience.start_autonomous_resilience())
+        logger.info("Autonomous resilience monitor started (blueprint mode)")
+    except Exception as e:
+        logger.warning("Resilience startup: %s", e)
+
+
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
-    html = """
-<html>
-<head>
-    <title>Decentralized AI Agent Dashboard</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background:#111; color:#eee; }}
-        .panel {{ background:#1f1f1f; padding:20px; margin-bottom:20px; border-radius:12px; }}
-        h1 {{ color:#7af; }}
-        button {{ padding: 10px 18px; border: none; background: #3a8; color:#fff; cursor:pointer; border-radius:8px; }}
-        input, textarea {{ width:100%; padding:10px; border-radius:8px; border:1px solid #333; background:#0f0f0f; color:#eee; margin-top:8px; }}
-        .service-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }}
-        .block {{ background:#111; padding:15px; border-radius:10px; border:1px solid #333; }}
-        pre {{ background:#0b0b0b; padding:15px; overflow:auto; max-height:280px; border-radius:10px; }}
-    </style>
-</head>
-<body>
-    <div class="panel"><h1>Decentralized AI Agent</h1><p>Live browser access, task queue, recovery, and cloud-ready control.</p></div>
-    <div class="panel service-grid">
-        <div class="block"><h3>Active Services</h3><pre id="services">Loading...</pre></div>
-        <div class="block"><h3>Pending Tasks</h3><pre id="pending">Loading...</pre></div>
-        <div class="block"><h3>Recent Output</h3><pre id="results">Loading...</pre></div>
-    </div>
-    <div class="panel">
-        <h3>Command Terminal</h3>
-        <form id="command-form">
-            <input type="text" id="command" placeholder="Enter shell command here" />
-            <button type="submit">Execute Command</button>
-        </form>
-        <p><small>Use commands carefully. Execution is live and local.</small></p>
-    </div>
-    <div class="panel">
-        <h3>Deployment Options</h3>
-        <button onclick="prepareDeployment()">Prepare GitHub/Cloud Deployment</button>
-        <pre id="deployResult">Ready</pre>
-    </div>
-    <div class="panel">
-        <h3>Task Queue</h3>
-        <form id="task-form">
-            <input type="text" id="task-command" placeholder="Enter task command to queue" />
-            <button type="submit">Queue Task</button>
-        </form>
-        <pre id="taskResult">Ready</pre>
-    </div>
-    <script>
-        async function fetchServices() {
-            const response = await fetch('/api/status');
-            const data = await response.json();
-            const lines = Object.entries(data.services).map(([k,v]) => `${k}: ${v}`);
-            document.getElementById('services').innerText = lines.join('\n');
-            const pending = data.pending_tasks.map(t => `${t.id}: ${t.command}`);
-            document.getElementById('pending').innerText = pending.join('\n') || 'No pending tasks';
-            const outputs = data.recent_outputs.map(o => `[${o.timestamp}] ${o.command} => ${o.result.status}`);
-            document.getElementById('results').innerText = outputs.join('\n') || 'No outputs yet';
-        }
-        async function prepareDeployment() {
-            const response = await fetch('/api/deploy', {method:'POST'});
-            const data = await response.json();
-            document.getElementById('deployResult').innerText = JSON.stringify(data, null, 2);
-        }
-        document.getElementById('command-form').onsubmit = async function(event) {
-            event.preventDefault();
-            const command = document.getElementById('command').value;
-            document.getElementById('command').value = '';
-            const response = await fetch('/api/execute', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command, parallel: false })
-            });
-            const data = await response.json();
-            alert('Result: ' + data.status + '\n' + (data.stderr || data.stdout || data.message || 'done'));
-            fetchServices();
-        };
-        document.getElementById('task-form').onsubmit = async function(event) {
-            event.preventDefault();
-            const command = document.getElementById('task-command').value;
-            document.getElementById('task-command').value = '';
-            const response = await fetch('/api/task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command })
-            });
-            const data = await response.json();
-            document.getElementById('taskResult').innerText = JSON.stringify(data, null, 2);
-            fetchServices();
-        };
-        setInterval(fetchServices, 4000);
-        fetchServices();
-    </script>
-</body>
-</html>
-"""
-    return HTMLResponse(html)
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return HTMLResponse(index_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Ghost Engine</h1><p>Dashboard static files not found. Run from project root.</p>")
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/api/status")
 def api_status():
-    services = connector.check_services()
-    return JSONResponse({
-        "services": services,
-        "pending_tasks": manager.pending_tasks(),
-        "recent_outputs": manager.recent_outputs(),
-    })
+    return JSONResponse(get_cached_status())
 
 @app.post("/api/execute")
 def api_execute(command: Dict[str, Any]):
@@ -1176,6 +1606,150 @@ def api_model_route(payload: Dict[str, Any]):
         "latency": response.latency,
         "output": response.output,
     })
+
+@app.get("/api/ping")
+def api_ping():
+    return JSONResponse({"pong": True, "timestamp": time.time()})
+
+@app.get("/api/check-port")
+def api_check_port(port: int = 8000, host: str = "127.0.0.1"):
+    in_use = is_port_in_use(port, host)
+    return JSONResponse({
+        "port": port,
+        "host": host,
+        "in_use": in_use,
+        "status": "busy" if in_use else "free",
+    })
+
+@app.post("/api/hf-infer")
+def api_hf_infer(payload: Dict[str, Any]):
+    prompt = payload.get("prompt", "")
+    params = payload.get("params", {})
+    if not prompt:
+        return JSONResponse({"status": "error", "message": "prompt is required"}, status_code=400)
+    if model_router.hf_engine is None:
+        return JSONResponse({"status": "error", "message": "HF engine not initialized"}, status_code=503)
+    result = model_router.hf_engine.process_prompt(prompt, params)
+    return JSONResponse({
+        "status": result.status,
+        "model": result.model,
+        "latency": result.latency,
+        "tokens_generated": result.tokens_generated,
+        "output": result.output,
+        "error": result.error,
+    })
+
+@app.get("/api/gateway/status")
+async def api_gateway_status():
+    """Unified API Gateway — provider availability."""
+    providers = await _api_gateway.initialize()
+    return JSONResponse({
+        "providers": list(providers.keys()),
+        "preferred": f"{_cloud_config.preferred_provider}/{_cloud_config.preferred_model}",
+        "fallback": f"{_cloud_config.fallback_provider}/{_cloud_config.fallback_model}",
+        "available_models": {
+            name: list(cfg["models"].keys()) for name, cfg in providers.items()
+        },
+    })
+
+
+@app.post("/api/gateway/chat")
+async def api_gateway_chat(payload: dict):
+    """Route a prompt through the Unified API Gateway (no local LLM)."""
+    messages = payload.get("messages", [])
+    model = payload.get("model")
+    provider = payload.get("provider")
+    temperature = payload.get("temperature", 0.3)
+    tools = payload.get("tools")
+
+    if not messages:
+        return JSONResponse({"status": "error", "message": "messages required"}, status_code=400)
+
+    await _api_gateway.initialize()
+    response = await _api_gateway.chat(
+        messages=messages, model=model, provider=provider,
+        temperature=temperature, tools=tools,
+    )
+    return JSONResponse({
+        "text": response.text,
+        "provider": response.provider,
+        "model": response.model,
+        "latency_ms": response.latency_ms,
+        "finish_reason": response.finish_reason,
+    })
+
+
+@app.get("/api/tools")
+def api_tools_list():
+    """List all registered tools by category."""
+    category = None
+    tools = _tool_registry.list_tools(category)
+    return JSONResponse({
+        "total": len(tools),
+        "tools": [
+            {"name": t.name, "description": t.description,
+             "category": t.category, "parameters": t.parameters}
+            for t in tools
+        ],
+    })
+
+
+@app.post("/api/tools/execute")
+async def api_tools_execute(payload: dict):
+    """Execute a registered tool by name with arguments."""
+    name = payload.get("name")
+    arguments = payload.get("arguments", {})
+    if not name:
+        return JSONResponse({"status": "error", "message": "tool name required"}, status_code=400)
+    result = await _tool_registry.execute(name, arguments)
+    return JSONResponse(result)
+
+
+@app.get("/api/health")
+def api_health():
+    """Health engine status report."""
+    report = _health_engine.get_report()
+    return JSONResponse(report)
+
+
+@app.post("/api/health/check")
+async def api_health_check():
+    """Trigger an immediate health check cycle."""
+    results = await _health_engine.run_checks()
+    return JSONResponse([
+        {"component": r.component, "healthy": r.healthy, "detail": r.detail}
+        for r in results
+    ])
+
+
+@app.post("/api/health/repair")
+async def api_health_repair(payload: dict):
+    """Trigger repair for a specific component."""
+    component = payload.get("component", "")
+    results = await _health_engine.run_checks()
+    target = next((r for r in results if r.component == component), None)
+    if not target:
+        return JSONResponse({"status": "error", "message": f"Unknown component: {component}"}, status_code=400)
+    success = await _health_engine.auto_repair(target)
+    return JSONResponse({"component": component, "repaired": success})
+
+
+@app.post("/api/cloudflare/tunnel")
+async def api_tunnel_start():
+    """Start Cloudflare Tunnel."""
+    success = await _cloudflare_tunnel.start()
+    return JSONResponse({
+        "tunnel_started": success,
+        "url": _cloudflare_tunnel.url if success else None,
+    })
+
+
+@app.post("/api/cloudflare/tunnel/stop")
+async def api_tunnel_stop():
+    """Stop Cloudflare Tunnel."""
+    await _cloudflare_tunnel.stop()
+    return JSONResponse({"tunnel_stopped": True})
+
 
 @app.get("/api/terminal-history")
 def api_terminal_history():
@@ -1408,6 +1982,85 @@ async def _run_ignition_once():
             logger.error("Manual ignition cycle failed: %s", exc)
 
 
+@app.post("/api/swarm/dht-reinit")
+async def api_swarm_dht_reinit(payload: dict):
+    """Re-initialize the Kademlia DHT node. Called by Health Engine v2."""
+    from ghost_swarm import GhostSwarmNode
+    bootstrap = payload.get("bootstrap", _cloud_config.dht_bootstrap)
+    port = payload.get("port", _cloud_config.dht_port)
+
+    logger.info("Swarm DHT re-init requested (bootstrap=%s, port=%s)", bootstrap, port)
+    try:
+        node = GhostSwarmNode(node_id=f"dht-reinit-{int(time.time())}", port=port)
+        if hasattr(node, 'dht') and node.dht:
+            await node.dht.start()
+            if bootstrap:
+                await node.dht.bootstrap(bootstrap)
+            return JSONResponse({"status": "ok", "dht_started": True, "port": port})
+        return JSONResponse({"status": "ok", "message": "DHT not available on this node"})
+    except Exception as e:
+        logger.error("DHT re-init failed: %s", e)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.post("/api/swarm/relay")
+async def api_swarm_relay(payload: dict):
+    """Switch swarm to relay-based peering. Called by Health Engine v2."""
+    reason = payload.get("reason", "no reason")
+    source = payload.get("source", "unknown")
+    logger.info("Swarm relay activated (reason=%s, source=%s)", reason, source)
+
+    # Try to enable relay mode on the swarm node
+    try:
+        global _swarm_node
+        if _swarm_node and hasattr(_swarm_node, 'enable_relay'):
+            await _swarm_node.enable_relay()
+            return JSONResponse({"status": "ok", "relay": "activated"})
+        return JSONResponse({"status": "ok", "relay": "not available", "note": "swarm node has no relay mode"})
+    except Exception as e:
+        logger.error("Swarm relay error: %s", e)
+        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+
+
+@app.post("/api/swarm/announce")
+async def api_swarm_announce(payload: dict):
+    """Receive heartbeat announcement + shared knowledge from an external peer.
+
+    Verifies the HMAC signature and node fingerprint before accepting
+    knowledge. Untrusted announcements are rejected with 403.
+    """
+    global _shared_knowledge, _swarm_security
+    url = payload.get("url", "unknown")
+    node_id = payload.get("node_id", "unknown")
+    role = payload.get("role", "unknown")
+    signature = payload.get("signature", "")
+    fingerprint = payload.get("fingerprint", "")
+
+    # Verify authenticity
+    if signature:
+        payload_copy = dict(payload)
+        payload_copy.pop("signature", None)
+        payload_copy.pop("fingerprint", None)
+        if not verify_json_payload(payload_copy, signature):
+            logger.warning("Swarm announce REJECTED (bad signature): node=%s", node_id)
+            return JSONResponse({"status": "rejected", "reason": "invalid_signature"}, status_code=403)
+        if fingerprint and not is_trusted_node(node_id, fingerprint):
+            logger.warning("Swarm announce REJECTED (bad fingerprint): node=%s", node_id)
+            return JSONResponse({"status": "rejected", "reason": "invalid_fingerprint"}, status_code=403)
+        _swarm_security.register_node(node_id, fingerprint)
+
+    # Ingest shared knowledge from peer
+    knowledge_payload = payload.get("knowledge")
+    if knowledge_payload and _shared_knowledge:
+        _shared_knowledge.ingest_heartbeat(knowledge_payload)
+        logger.info("Swarm announce: node=%s url=%s knowledge=%d entries",
+                    node_id, url, knowledge_payload.get("knowledge_count", 0))
+    else:
+        logger.info("Swarm announce: node=%s url=%s", node_id, url)
+
+    return JSONResponse({"status": "acknowledged", "node_id": node_id, "swarm_secret_required": True})
+
+
 @app.get("/api/swarm/peers")
 def api_swarm_peers():
     """Return discovered peers from the autonomous swarm."""
@@ -1428,12 +2081,209 @@ def api_swarm_peers():
     return JSONResponse({"peers": peers, "total": len(peers)})
 
 
+# ==============================================================================
+# Meta-cognitive endpoints — Performance Analyzer
+# ==============================================================================
+
+
+@app.get("/api/analyzer/report")
+def api_analyzer_report():
+    """Performance Analyzer — full report with flagged tools."""
+    global _performance_analyzer
+    return JSONResponse(_performance_analyzer.get_report())
+
+
+@app.get("/api/analyzer/diagnostics/{tool_name}")
+def api_analyzer_diagnostics(tool_name: str):
+    """Deep diagnostic for a specific tool."""
+    global _performance_analyzer
+    return JSONResponse(_performance_analyzer.get_diagnostics(tool_name))
+
+
+# ==============================================================================
+# Shared Knowledge endpoints
+# ==============================================================================
+
+
+@app.get("/api/knowledge")
+def api_knowledge():
+    """Shared Knowledge Layer — all entries and peers."""
+    global _shared_knowledge
+    return JSONResponse(_shared_knowledge.get_report())
+
+
+@app.post("/api/knowledge/propagate")
+async def api_knowledge_propagate(payload: dict):
+    """Manually propagate a knowledge entry to all peers."""
+    global _shared_knowledge
+    key = payload.get("key", "")
+    value = payload.get("value", {})
+    ttl = payload.get("ttl", 3600)
+    if not key:
+        return JSONResponse({"status": "error", "message": "key required"}, status_code=400)
+    _shared_knowledge.add_observation(key, value, ttl=ttl)
+    return JSONResponse({"status": "propagated", "key": key, "ttl": ttl})
+
+
+# ==============================================================================
+# Optimization Proposals endpoints
+# ==============================================================================
+
+
+@app.get("/api/proposals/{proposal_id}")
+def api_proposal_detail(proposal_id: str):
+    """Get a single optimization proposal."""
+    PROPOSALS_DIR = Path("agent_logs/optimization_proposals")
+    f = PROPOSALS_DIR / f"{proposal_id}.json"
+    if not f.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse(json.loads(f.read_text(encoding="utf-8")))
+
+
+# ==============================================================================
+# AutoPatcher endpoints — autonomous execution & exception-based review
+# ==============================================================================
+
+
+@app.get("/api/patcher/status")
+def api_patcher_status():
+    """AutoPatcher status — running, recent actions, exceptions flagged."""
+    global _auto_patcher
+    return JSONResponse(_auto_patcher.get_status())
+
+
+@app.post("/api/patcher/apply/{proposal_id}")
+async def api_patcher_apply(proposal_id: str, force: bool = False):
+    """Manually trigger auto-patch for a specific proposal (force skips threshold)."""
+    global _auto_patcher
+    result = await _auto_patcher.apply_proposal(proposal_id, force=force)
+    return JSONResponse(result)
+
+
+@app.post("/api/patcher/sync")
+async def api_patcher_sync():
+    """Sync and apply patches broadcast by peer swarm nodes."""
+    global _auto_patcher
+    result = await _auto_patcher.sync_peer_patches()
+    return JSONResponse(result)
+
+
+@app.get("/api/patcher/exceptions")
+def api_patcher_exceptions():
+    """List all exceptions flagged for human review."""
+    global _auto_patcher
+    status = _auto_patcher.get_status()
+    exceptions = [
+        e for e in status.get("recent_actions", [])
+        if e.get("is_exception")
+    ]
+    # Also read from auto_patch.log
+    log_path = AUTO_PATCH_LOG
+    log_entries = []
+    if log_path.exists():
+        try:
+            with open(log_path, encoding="utf-8") as lf:
+                for line in lf.readlines()[-50:]:
+                    log_entries.append(line.strip())
+        except Exception:
+            pass
+    return JSONResponse({
+        "exceptions": exceptions,
+        "total": len(exceptions),
+        "log_entries": log_entries,
+    })
+
+
+@app.get("/api/proposals")
+def api_proposals(status: str = "all"):
+    """List optimization proposals. Default shows ALL (exception-based review model)."""
+    PROPOSALS_DIR = Path("agent_logs/optimization_proposals")
+    if not PROPOSALS_DIR.exists():
+        return JSONResponse({"proposals": [], "total": 0})
+    proposals = []
+    for f in sorted(PROPOSALS_DIR.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if data.get("status") == status or status == "all":
+                proposals.append(data)
+        except Exception:
+            continue
+    return JSONResponse({"proposals": proposals, "total": len(proposals)})
+
+
+# ============= SWARM SECURITY =============
+
+@app.get("/api/swarm/security")
+def api_swarm_security():
+    """Swarm mesh security status — trusted nodes, isolated nodes, audit log."""
+    global _swarm_security
+    status = _swarm_security.get_status()
+    threat_level = "low"
+    if status["isolated_nodes"] > 0:
+        threat_level = "medium"
+    if status["isolated_nodes"] > 5:
+        threat_level = "high"
+    return JSONResponse({
+        **status,
+        "threat_level": threat_level,
+        "hmac_algorithm": "HMAC-SHA256",
+        "mesh_encryption": "symmetric (SWARM_SECRET env var)",
+    })
+
+
+# ============= GHOSTSIGNAL STATUS =============
+
+@app.get("/api/ghostsignal/status")
+def api_ghostsignal_status():
+    """Satellite trans-state propagation layer status."""
+    sat_ok = _STEALTH_SAT_AVAILABLE
+    seed_ok = _SEED_REASSEMBLY_AVAILABLE
+    res_ok = _AUTONOMOUS_RESILIENCE_AVAILABLE
+
+    sat_status = "active" if sat_ok else "unavailable"
+    seed_status = {}
+    if seed_ok:
+        try:
+            loop = asyncio.new_event_loop()
+            seed_status = loop.run_until_complete(seed_reassembly.get_reassembly_status())
+            loop.close()
+        except Exception:
+            seed_status = {"error": "seed_reassembly_status_failed"}
+
+    return JSONResponse({
+        "stealth_beyond_sat": {
+            "available": sat_ok,
+            "status": sat_status,
+            "description": "DVB-S/S2 NULL-packet injection blueprint (requires SDR hardware)",
+        },
+        "seed_reassembly": {
+            "available": seed_ok,
+            "status": seed_status,
+            "description": "Cross-platform identity reconstruction from satellite fragments",
+        },
+        "autonomous_resilience": {
+            "available": res_ok,
+            "status": "active" if res_ok else "unavailable",
+            "description": "Echo-mode diagnostics / thermal-noise heartbeat / offline failover",
+        },
+        "carrier_mhz": 10723.0,
+        "note": "Blueprints active — require SDR hardware (RTL-SDR / HackRF) and/or oscilloscope for full TX/RX",
+    })
+
+
 # ============= STARTUP HELPERS =============
 def initialize_state():
     if not STATE_FILE.exists():
         STATE_FILE.write_text(json.dumps({"started_at": datetime.now().isoformat()}), encoding="utf-8")
 
 if __name__ == "__main__":
+    import sys
+    if "--auto-evolve=true" in sys.argv:
+        on_startup()
     initialize_state()
-    logger.info("Starting Decentralized AI Agent web dashboard on http://0.0.0.0:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("MANAGER_PORT", "8000"))
+    resolved_port = find_free_port(preferred=port)
+    if resolved_port != port:
+        logger.warning("Port %d in use, falling back to port %d", port, resolved_port)
+    logger.info("Starting Decentralized AI Agent web dashboard on http://0.0.0.0:%d", resolved_port)
+    uvicorn.run(app, host="0.0.0.0", port=resolved_port)

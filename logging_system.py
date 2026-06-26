@@ -1,16 +1,42 @@
 """
 Unified Logging System — Enterprise-grade dual-output logging.
 Writes to both console (stdout) and a rotating file with levels.
+Secrets are automatically redacted from all log output.
 """
 
 import logging
 import logging.handlers
 import sys
+import re
 from pathlib import Path
 from typing import Optional
 
 
 _LOG_INITIALIZED = False
+
+# Common secret patterns to redact from all log output
+_SECRET_PATTERNS = [
+    (re.compile(r'(ghp_|gho_|ghu_|ghs_|ghr_)[0-9a-zA-Z]{36}'), r'\1***REDACTED***'),
+    (re.compile(r'gsk_[0-9a-zA-Z]{32}'), 'gsk_***REDACTED***'),
+    (re.compile(r'hf_[0-9a-zA-Z]{32,}'), 'hf_***REDACTED***'),
+    (re.compile(r'cfut_[0-9a-zA-Z]{32,}'), 'cfut_***REDACTED***'),
+    (re.compile(r'(sk-[0-9a-zA-Z]{20,}|sk-[0-9a-zA-Z]{40,})'), 'sk-***REDACTED***'),
+    (re.compile(r'MT[0-9a-zA-Z_\-]+\.[0-9a-zA-Z_\-]+\.[0-9a-zA-Z_\-]+'), 'MT***REDACTED***'),
+    (re.compile(r'AKIA[0-9A-Z]{16}'), 'AKIA***REDACTED***'),
+    (re.compile(r'(?:^|[^a-zA-Z0-9])(AQ\.[0-9a-zA-Z_\-]{30,})(?:$|[^a-zA-Z0-9])'), ' AQ.***REDACTED*** '),
+    (re.compile(r'(?i)(token|secret|password|api_key)\s*[:=]\s*["\'][^"\']+["\']'), lambda m: m.group(0)[:m.group(0).rfind('"')-8] + '"***REDACTED***"' if '"' in m.group(0) else m.group(0)[:20] + '***REDACTED***'),
+    (re.compile(r'-----BEGIN (RSA|EC|OPENSSH|PGP|PRIVATE) PRIVATE KEY-----'), '-----BEGIN PRIVATE KEY-----***REDACTED***'),
+]
+
+
+class SanitizingFormatter(logging.Formatter):
+    """Formatter that redacts secrets from all log messages."""
+
+    def format(self, record):
+        msg = super().format(record)
+        for pattern, replacement in _SECRET_PATTERNS:
+            msg = pattern.sub(replacement, msg)
+        return msg
 
 
 def get_config() -> dict:
@@ -40,7 +66,7 @@ def setup_logging(level: Optional[str] = None,
 
     root.setLevel(getattr(logging, log_level, logging.INFO))
 
-    fmt = logging.Formatter(
+    fmt = SanitizingFormatter(
         "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )

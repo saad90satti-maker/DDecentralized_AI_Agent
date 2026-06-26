@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ghost-Orbital HF</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --surface: #131820;
+    --surface2: #1a2230;
+    --border: #2a3548;
+    --text: #c8d6e5;
+    --text-dim: #7a8ba8;
+    --accent: #00d4aa;
+    --accent2: #4a9eff;
+    --red: #ff6b6b;
+    --orange: #ffa94d;
+    --font: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+
+  /* header */
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 20px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px;
+  }
+  .header h1 { font-size: 18px; color: var(--accent); font-weight: 500; }
+  .header .status-badge {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--text-dim);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.green { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .dot.red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+  /* grid */
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
+  }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim); margin-bottom: 12px; font-weight: 500;
+  }
+
+  /* telemetry values */
+  .metric-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .metric {
+    flex: 1; min-width: 100px; padding: 10px; background: var(--surface2);
+    border-radius: 6px; text-align: center;
+  }
+  .metric .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
+  .metric .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .metric .value.snr { color: var(--accent); }
+  .metric .value.cycle { color: var(--accent2); }
+  .metric .value.gate { color: var(--orange); }
+  .metric .value.window { color: var(--red); }
+
+  /* log viewer */
+  .log-box {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px; height: 180px; overflow-y: auto; font-size: 11px;
+    line-height: 1.6; font-family: var(--font);
+  }
+  .log-box .line { color: var(--text-dim); }
+  .log-box .line .ts { color: #556; }
+  .log-box .line .src { color: var(--accent2); }
+
+  /* input / button */
+  input, select, textarea {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 12px; border-radius: 4px;
+    font-family: var(--font); font-size: 13px; width: 100%;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  button {
+    background: var(--accent); color: #000; border: none; padding: 8px 16px;
+    border-radius: 4px; font-family: var(--font); font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: .2s;
+  }
+  button:hover { opacity: .85; }
+  button.secondary { background: var(--surface2); color: var(--text); }
+  button.danger { background: var(--red); color: #000; }
+
+  .input-row { display: flex; gap: 8px; margin-top: 8px; }
+  .input-row input { flex: 1; }
+
+  /* chat */
+  .chat-box {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px; height: 200px; overflow-y: auto; font-size: 12px;
+    line-height: 1.5; margin-bottom: 8px;
+  }
+  .chat-box .msg { margin: 4px 0; }
+  .chat-box .msg.user { color: var(--accent2); }
+  .chat-box .msg.ai { color: var(--accent); }
+  .chat-box .msg .label { color: var(--text-dim); font-size: 10px; }
+
+  /* slider */
+  .slider-group { margin-bottom: 12px; }
+  .slider-group .row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .slider-group input[type=range] {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    height: 4px; background: var(--border); border-radius: 2px; outline: none;
+  }
+  .slider-group input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+
+  /* responsive */
+  @media (max-width: 800px) { .grid, .grid-3 { grid-template-columns: 1fr; } }
+
+  .toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: var(--accent); color: #000; padding: 10px 16px;
+    border-radius: 6px; font-size: 13px; font-weight: 600;
+    opacity: 0; transition: opacity .3s; z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: var(--red); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>&#9670; Ghost-Orbital HF</h1>
+    <div class="status-badge">
+      <span class="dot green" id="statusDot"></span>
+      <span id="statusText">Connecting...</span>
+      <span id="snrDisplay" style="margin-left:12px;color:var(--accent)">0.00 dB</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Telemetry -->
+    <div class="card">
+      <h2>DSP Telemetry</h2>
+      <div class="metric-row">
+        <div class="metric"><div class="label">SNR</div><div class="value snr" id="snrVal">0.00</div></div>
+        <div class="metric"><div class="label">Cycle</div><div class="value cycle" id="cycleVal">0</div></div>
+        <div class="metric"><div class="label">Gate dB</div><div class="value gate" id="gateVal">0.0</div></div>
+        <div class="metric"><div class="label">Window</div><div class="value window" id="windowVal">0.0</div></div>
+      </div>
+    </div>
+
+    <!-- DSP Tuning -->
+    <div class="card">
+      <h2>DSP Tuning</h2>
+      <div class="slider-group">
+        <div class="row"><span>Target SNR (dB)</span><span id="targetSnrLabel">38</span></div>
+        <input type="range" id="targetSnr" min="0" max="60" value="38" step="0.5">
+      </div>
+      <div class="slider-group">
+        <div class="row"><span>Gate Threshold (dB)</span><span id="gateLabel">13.0</span></div>
+        <input type="range" id="gateSlider" min="0" max="30" value="13" step="0.1">
+      </div>
+      <div class="slider-group">
+        <div class="row"><span>Window Exponent</span><span id="windowLabel">0.9</span></div>
+        <input type="range" id="windowSlider" min="0.5" max="2.0" value="0.9" step="0.05">
+      </div>
+      <button onclick="tuneDSP()" style="width:100%">Apply Tuning</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Handshake Log -->
+    <div class="card">
+      <h2>Handshake Log</h2>
+      <div class="log-box" id="handshakeLog"><div class="line" style="color:#556">Waiting for data...</div></div>
+    </div>
+
+    <!-- Fleet Command -->
+    <div class="card">
+      <h2>Fleet Command</h2>
+      <select id="cmdSelect">
+        <option value="UPDATE_PROTOCOL">UPDATE_PROTOCOL</option>
+        <option value="START_DSP">START_DSP</option>
+        <option value="SHUTDOWN_RELAY">SHUTDOWN_RELAY</option>
+        <option value="DEPLOY_DSP_PATCH_V2">DEPLOY_DSP_PATCH_V2</option>
+      </select>
+      <div class="input-row">
+        <input type="text" id="customCmd" placeholder="custom command..." />
+        <button onclick="sendFleetCmd()">Send</button>
+      </div>
+      <div id="fleetResult" style="font-size:11px;color:var(--text-dim);margin-top:6px"></div>
+    </div>
+  </div>
+
+  <!-- LLM Chat -->
+  <div class="card">
+    <h2>Hermes AI Chat</h2>
+    <div class="chat-box" id="chatBox">
+      <div class="msg ai"><span class="label">Hermes:</span> Ask me about DSP, satellite relays, or swarm AI.</div>
+    </div>
+    <div class="input-row">
+      <input type="text" id="chatInput" placeholder="Ask Hermes..." onkeydown="if(event.key==='Enter')sendChat()" />
+      <button onclick="sendChat()">Send</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = window.location.origin;
+
+// ── Poll telemetry ────────────────────────────────────────────────────
+async function pollTelemetry() {
+  try {
+    const r = await fetch(`${API}/api/status`);
+    const d = await r.json();
+    const snr = d.snr_db || 0;
+    document.getElementById('snrVal').textContent = snr.toFixed(2);
+    document.getElementById('cycleVal').textContent = d.cycle || 0;
+    document.getElementById('gateVal').textContent = (d.gate_db || 0).toFixed(1);
+    document.getElementById('windowVal').textContent = (d.window_exp || 0).toFixed(2);
+    document.getElementById('snrDisplay').textContent = `${snr.toFixed(2)} dB`;
+    document.getElementById('statusDot').className = 'dot green';
+    document.getElementById('statusText').textContent = 'Connected';
+  } catch(e) {
+    document.getElementById('statusDot').className = 'dot red';
+    document.getElementById('statusText').textContent = 'Offline';
+  }
+}
+
+// ── Poll handshake log ────────────────────────────────────────────────
+async function pollHandshake() {
+  try {
+    const r = await fetch(`${API}/api/handshake/log?lines=20`);
+    const d = await r.json();
+    const box = document.getElementById('handshakeLog');
+    if (!d.entries || d.entries.length === 0) {
+      box.innerHTML = '<div class="line" style="color:#556">No handshake events yet.</div>';
+      return;
+    }
+    box.innerHTML = d.entries.map(e => {
+      const m = e.match(/\[(.*?)\] VERIFIED from ([\d.]+)/);
+      if (m) return `<div class="line"><span class="ts">[${m[1]}]</span> VERIFIED from <span class="src">${m[2]}</span></div>`;
+      return `<div class="line">${e}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+  } catch(e) {}
+}
+
+// ── DSP Tune ──────────────────────────────────────────────────────────
+async function tuneDSP() {
+  const target = document.getElementById('targetSnr').value;
+  const gate = document.getElementById('gateSlider').value;
+  const window = document.getElementById('windowSlider').value;
+  try {
+    const r = await fetch(`${API}/api/dsp/tune?target_snr=${target}&gate=${gate}&window=${window}`);
+    const d = await r.json();
+    showToast(d.tuned ? 'Tuning applied' : 'Tuning failed (ghost-core offline)', d.tuned);
+  } catch(e) {
+    showToast('Tuning request failed', false);
+  }
+}
+
+// ── Fleet command ─────────────────────────────────────────────────────
+async function sendFleetCmd() {
+  const sel = document.getElementById('cmdSelect').value;
+  const custom = document.getElementById('customCmd').value.trim();
+  const cmd = custom || sel;
+  if (!cmd) return showToast('No command specified', false);
+  try {
+    const r = await fetch(`${API}/api/fleet/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: cmd}),
+    });
+    const d = await r.json();
+    document.getElementById('fleetResult').textContent = d.orchestrated
+      ? `Broadcast to ${(d.nodes||[]).join(', ') || 'fleet'}`
+      : `Error: ${d.error || 'unknown'}`;
+    showToast(`Command sent: ${cmd}`, d.orchestrated);
+  } catch(e) {
+    showToast('Fleet command failed', false);
+  }
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const prompt = input.value.trim();
+  if (!prompt) return;
+  input.value = '';
+
+  const box = document.getElementById('chatBox');
+  box.innerHTML += `<div class="msg user"><span class="label">You:</span> ${escapeHtml(prompt)}</div>`;
+  box.scrollTop = box.scrollHeight;
+
+  try {
+    const r = await fetch(`${API}/api/chat`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt}),
+    });
+    const d = await r.json();
+    box.innerHTML += `<div class="msg ai"><span class="label">Hermes (${d.model}):</span> ${escapeHtml(d.reply)}</div>`;
+  } catch(e) {
+    box.innerHTML += `<div class="msg ai" style="color:var(--red)"><span class="label">Error:</span> ${e.message}</div>`;
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────
+function showToast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (ok ? '' : ' error') + ' show';
+  setTimeout(() => t.className = 'toast', 2500);
+}
+
+// ── Slider labels ─────────────────────────────────────────────────────
+document.getElementById('targetSnr').addEventListener('input', function() {
+  document.getElementById('targetSnrLabel').textContent = this.value;
+});
+document.getElementById('gateSlider').addEventListener('input', function() {
+  document.getElementById('gateLabel').textContent = parseFloat(this.value).toFixed(1);
+});
+document.getElementById('windowSlider').addEventListener('input', function() {
+  document.getElementById('windowLabel').textContent = parseFloat(this.value).toFixed(2);
+});
+
+// ── Init ──────────────────────────────────────────────────────────────
+pollTelemetry();
+pollHandshake();
+setInterval(pollTelemetry, 3000);
+setInterval(pollHandshake, 5000);
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from learning_log import LearningLog
 from security_utils import sanitize_for_logging
+from hf_inference import HFInferenceEngine, InferenceConfig
 
 load_dotenv()
 
@@ -50,6 +51,7 @@ class ModelRouter:
         self.performance_history = deque(maxlen=50)
         self.local_priority = True
         self._groq_active = True
+        self._hf_engine: Optional[HFInferenceEngine] = None
 
     def start_terminal_monitor(self) -> None:
         if self.monitor_thread and self.monitor_thread.is_alive():
@@ -94,6 +96,7 @@ class ModelRouter:
         cascade = [
             ("groq",   lambda: self._call_groq(prompt, params)),
             ("gemini", lambda: self._call_gemini(prompt, params)),
+            ("hf",     lambda: self._call_hf(prompt, params)),
             ("local",  lambda: self._call_local(prompt, params)),
         ]
 
@@ -304,3 +307,22 @@ class ModelRouter:
             return self.terminal_path.read_text(encoding="utf-8")
         except Exception:
             return ""
+
+    def _call_hf(self, prompt: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if self._hf_engine is None:
+            cfg = InferenceConfig.from_env()
+            self._hf_engine = HFInferenceEngine(cfg)
+        success = self._hf_engine.load_model()
+        if not success:
+            return {"status": "error", "output": self._hf_engine._load_error or "HF model unavailable", "model": "hf"}
+        p = dict(params) if params else {}
+        result = self._hf_engine.process_prompt(prompt, p)
+        return {
+            "status": result.status,
+            "output": result.output if result.status == "success" else result.error,
+            "model": f"hf/{self._hf_engine.config.model_id}",
+        }
+
+    @property
+    def hf_engine(self) -> Optional[HFInferenceEngine]:
+        return self._hf_engine
